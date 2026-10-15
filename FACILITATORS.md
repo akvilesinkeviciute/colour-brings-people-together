@@ -12,7 +12,7 @@ The Colour Spinner has no separate API. The notebooks make the same requests as 
 |---|---|---|
 | `POST /spinner/color_picker` with `r`, `g`, `b`, `language-select`, `translation-select` | Namer name and confidence, Mapper best example of that name, Translator result | Reply format checked against a saved response |
 | `POST /spinner/simulate` with JSON `{r, g, b, simulation_type}` | Colour vision deficiency and age simulations (`protanopia`, `deuteranopia`, `tritanopia`, `16-40`, `40-60`, `60-80`) | Request format seen; reply read flexibly (24-byte JSON, not yet seen) |
-| `GET /spinner/mobile_panels?language_id=…&colour_id=…` | Best example of a name the Spinner hasn't already returned: the AI's names in Part B, section 6, and names typed in by hand in Part C | Reply format not yet seen; the notebook searches it for colours |
+| `GET /spinner/mobile_panels?language_id=…&colour_id=…` | Best example of a name the Spinner hasn't already returned: the AI's names in Part B, section 7, and names typed in by hand in Part C | Reply format not yet seen; the notebook searches it for colours |
 
 All of this lives in `SPINNER_API` and `ApiSpinner` in `colour_masterclass.py`. If the site changes, only those need updating.
 
@@ -47,7 +47,7 @@ Run both notebooks on the venue network if you can. In Part B, the *Ask the Colo
 
 ### The AI system
 
-Everyone uses the same route, with the AI they use day to day. The notebook shows the prompt with **Copy prompt** and buttons for ChatGPT, Claude and Gemini. Each button copies the prompt as it opens the tool. ChatGPT and Claude accept the prompt in the link and open with it typed in; for Gemini, participants paste it (Cmd/Ctrl + V) if it isn't filled in. Any other AI: copy the prompt and paste it there. The sites decide whether to accept a prompt in a link, so check the buttons shortly before the session. Participants then paste the AI's answers into numbered boxes: in Part B one row per test colour (numbered by SDG goal) with a box per language, and in Part C one box per name.
+Everyone uses the same route, with the AI they use day to day. The notebook shows the prompt with **Copy prompt** and buttons for ChatGPT, Claude and Gemini. Each button copies the prompt as it opens the tool. ChatGPT and Claude accept the prompt in the link and open with it typed in; for Gemini, participants paste it (Cmd/Ctrl + V) if it isn't filled in. Any other AI: copy the prompt and paste it there. The sites decide whether to accept a prompt in a link, so check the buttons shortly before the session. Participants then paste the AI's whole reply into one box; the notebook reads the numbered lines (numbered by SDG goal in Part B, by name in Part C) and says if any answer is missing.
 
 Colab's built-in Gemini was removed from the notebooks: it depends on each person's small free quota, which runs out without warning.
 
@@ -73,7 +73,7 @@ If the Spinner's simulations can't be reached, the perceptual cells show a messa
 
 **Palette previews and export.** Part C shows each language's grounded palette in a chart, an interface and wayfinding, with typical vision and one chosen condition, and saves each preview as a PNG. The download has a palette card (PNG), swatch files for Adobe apps (`.ase`), GIMP, Inkscape and Krita (`.gpl`) and Figma or design systems (`.tokens.json`), CSS custom properties, and the CSV and JSON data.
 
-**The story.** Participants choose a test palette, *their* language (as the designer) and *their audience's* languages once, in Part B section 2. Everything follows from that: distinctness is measured within the test palette (the full 17-colour grid is only context), translatability compares the audience's focal colours with the designer's, a Translator table shows the designer's names in all six languages, and Part C builds one grounded palette per language.
+**The story.** Participants choose a test palette, *their* language (as the designer) and *their audience's* languages once, in Part B section 3, after seeing the whole palette under each condition in section 2. Everything follows from that: distinctness is measured within the test palette (the full 17-colour grid is only context), translatability compares the audience's focal colours with the designer's, a Translator table shows the designer's names in all six languages, and Part C builds one grounded palette per language.
 
 **SDG poster.** Part B opens with the UN's official SDG poster (`images/sdg_poster.png`), from the UN's communications materials, with the link and the statement the UN's guidelines require. The UN also asks for permission when SDG branding appears on materials for events with registration fees (sdgpermissions@un.org); confirm this applies, or has been granted, before the session.
 

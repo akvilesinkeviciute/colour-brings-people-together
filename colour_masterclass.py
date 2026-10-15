@@ -868,7 +868,7 @@ def _cell_grid(values, threshold, row_labels, title, subtitle, row_chip_colours=
     """A grid of rounded cells: one row per test colour (or palette), one column per viewing condition."""
     nr, nc = values.shape
     cols = list(values.columns)
-    W, H = 1.3 * nc + (1.6 if row_chip_colours else 2.4), 0.8 * nr + 1.6
+    W, H = 1.5 * nc + (1.6 if row_chip_colours else 2.4), 0.8 * nr + 1.8
     fig, ax = plt.subplots(figsize=(W, H))
     for r in range(nr):
         for c in range(nc):
@@ -882,7 +882,8 @@ def _cell_grid(values, threshold, row_labels, title, subtitle, row_chip_colours=
                     fontsize=12, fontweight="bold", color=ink)
             if neighbours is not None:
                 n = neighbours.iat[r, c]
-                ax.add_patch(mpl.patches.Rectangle((c - 0.30, r + 0.13), 0.13, 0.15, fc=SDG.hex[n], ec="white", lw=0.8))
+                seen = simulate(SDG.hex[n], cols[c])            # the neighbour as it looks under this condition
+                ax.add_patch(mpl.patches.Rectangle((c - 0.30, r + 0.13), 0.13, 0.15, fc=seen, ec="white", lw=0.8))
                 ax.text(c - 0.12, r + 0.205, f"vs {n}", ha="left", va="center", fontsize=8.5, color=ink)
     for c, name in enumerate(cols):
         ax.text(c, -0.68, condition_label(name), ha="center", va="center", fontsize=10, color=INK)
@@ -893,9 +894,11 @@ def _cell_grid(values, threshold, row_labels, title, subtitle, row_chip_colours=
     else:
         ax.set_yticks(range(nr), row_labels, fontsize=10); ax.tick_params(axis="y", length=0, colors=INK)
     for sp in ax.spines.values(): sp.set_visible(False)
-    ax.set_title(title, pad=24)
-    ax.annotate(subtitle, xy=(0, 1), xycoords="axes fraction", xytext=(0, 6), textcoords="offset points",
-                ha="left", va="bottom", fontsize=9.5, color=MUTED)
+    import textwrap
+    sub = textwrap.fill(subtitle, width=int(1.5 * nc * 13))
+    ax.set_title(title, pad=12 + 13 * (sub.count("\n") + 1))
+    ax.annotate(sub, xy=(0, 1), xycoords="axes fraction", xytext=(0, 6), textcoords="offset points",
+                ha="left", va="bottom", fontsize=9.5, color=MUTED, linespacing=1.3)
     fig.tight_layout()
     if row_chip_colours:
         fig.subplots_adjust(left=max(fig.subplotpars.left, 1.3 / W))
@@ -909,7 +912,8 @@ def plot_nearest_neighbours(nn_de, nn_id, threshold):
     below = int((nn_de.values < threshold).sum())
     _cell_grid(nn_de, threshold, [str(i) for i in pick],
                "How close is each test colour to its nearest neighbour in your palette?",
-               f"ΔE00 to the nearest other test colour under each condition. Red: closer than {threshold}, "
+               f"ΔE00 to the nearest other test colour under each condition; the small patch is that neighbour as it "
+               f"looks under the condition. Red: closer than {threshold}, "
                f"so easily confused ({below} of {nn_de.size} cells).",
                row_chip_colours=[SDG.hex[i] for i in pick], neighbours=nn_id)
 
@@ -1073,7 +1077,7 @@ def show_translatability(naming, pick, languages, threshold, source=None):
     """Source language first: its focal colour vs the test colour. Then each target language:
     its focal colour vs the source's focal colour."""
     if source is not None and source not in languages:
-        show(f"<b>{esc(source)}</b> isn't one of the languages you ticked in section 2. "
+        show(f"<b>{esc(source)}</b> isn't one of the languages you ticked in section 3. "
              "Tick it there, or choose another source language.")
         return
     order = ([source] + [l for l in languages if l != source]) if source else list(languages)
@@ -1191,7 +1195,7 @@ def scorecard(pick, naming, language=ALL_LANGUAGES, condition="Typical", normali
     if language not in (ALL_LANGUAGES, AUDIENCE_AVG) and language not in conf.columns:
         show(f'<div class="card"><b>{esc(language)} isn\'t one of the languages you audited</b>'
              f'<p style="margin:6px 0 0">Showing the average of your languages instead. To see {esc(language)}, '
-             f'tick it in section 2 and run sections 2 and 4 again. Your languages: '
+             f'tick it in section 3 and run sections 3 to 5 again. Your languages: '
              f'{esc(", ".join(conf.columns))}.</p></div>')
         language = ALL_LANGUAGES
     if language == AUDIENCE_AVG:
@@ -1276,40 +1280,18 @@ def numbered_items(rows, kind):
     return [f"{n}. {r.language}: {plain_with_roman(r)}" for n, (_, r) in enumerate(rows.iterrows(), 1)]
 
 def answer_boxes(rows, kind):
-    """kind='name': one numbered row per test colour, with its swatch and hex code filled in and one box
-    per language. kind='colour': one numbered box per name."""
+    """One box to paste the AI's whole reply into; the notebook reads the numbered lines itself."""
     try:
         import ipywidgets as w
     except ImportError:
-        print("Answer boxes need ipywidgets, which Colab includes.")
+        print("The paste box needs ipywidgets, which Colab includes.")
         return
     rows = rows.reset_index(drop=True)
-    lay = lambda px, **k: w.Layout(width=f"{px}px", **k)
-    items, boxes = [], {}
-    if kind == "name":
-        colours = rows.drop_duplicates("hex")
-        langs = list(dict.fromkeys(rows.language))
-        items.append(w.HBox([w.HTML("", layout=lay(34)), w.HTML("<b>Test colour</b>", layout=lay(190))] +
-                            [w.HTML(f"<b>{_h(l)}</b>", layout=lay(170)) for l in langs]))
-        for k, (_, r) in enumerate(colours.iterrows(), 1):
-            n = int(r.sdg) if "sdg" in r and not pd.isna(r.sdg) else k
-            swatch = (f'<span style="display:inline-block;width:34px;height:22px;border-radius:3px;vertical-align:middle;'
-                      f'background:{r.hex};box-shadow:0 0 0 3px {SURROUND}"></span>&nbsp;&nbsp; {r.hex}')
-            row = [w.HTML(f'<b style="font-size:15px">{n}</b>', layout=lay(34)), w.HTML(swatch, layout=lay(190))]
-            for l in langs:
-                box = w.Text(placeholder=f"name in {l}", layout=lay(160))
-                boxes[(r.hex, l)] = box
-                row.append(box)
-            items.append(w.HBox(row))
-    else:
-        for n, (_, r) in enumerate(rows.iterrows(), 1):
-            box = w.Text(placeholder="paste the colour code, e.g. #E5243B", layout=lay(300))
-            boxes[n] = box
-            items.append(w.HBox([w.HTML(f'<b style="font-size:15px">{n}</b>', layout=lay(34)), box,
-                                 w.HTML(f'<span style="color:{MUTED}">{_h(r.language)}: {_h(r["name"])}</span>',
-                                        layout=lay(260, margin="0 0 0 10px"))]))
-    _ANS.update(boxes=boxes, rows=rows, kind=kind)
-    display(w.VBox(items))
+    n = rows.drop_duplicates("hex").shape[0] if kind == "name" else len(rows)
+    box = w.Textarea(placeholder="Paste your AI's whole reply here (all lines at once), then run the next cell.",
+                     layout=w.Layout(width="100%", max_width="820px", height=f"{min(320, 60 + 24 * n)}px"))
+    _ANS.update(boxes={"reply": box}, rows=rows, kind=kind)
+    display(box)
 
 def _answers_table(values, rows, kind):
     """values: {(hex, language): name} for kind 'name'; [colour code, …] in order for kind 'colour'."""
@@ -1322,19 +1304,23 @@ def _answers_table(values, rows, kind):
     return t[["language", "name", "ai_hex"]]
 
 def collected_answers():
-    """What was typed into the boxes, as a table."""
+    """Read the pasted reply into a table, and say if any answers are missing."""
     rows, kind, boxes = _ANS["rows"], _ANS["kind"], _ANS["boxes"]
     if rows is None:
-        raise ValueError("Run the cell above first: it shows the boxes to fill in.")
-    if kind == "name":
-        values = {k: b.value.strip() for k, b in boxes.items()}
-        filled = any(values.values())
+        raise ValueError("Run the cell above first: it shows the box to paste into.")
+    text = boxes["reply"].value.strip()
+    if not text:
+        raise ValueError("The box is empty: paste your AI's whole reply into it, then run this cell again.")
+    t = answers_from_reply(text, rows, kind)
+    col = "ai_name" if kind == "name" else "ai_hex"
+    missing = t[t[col].isna()]
+    if len(missing):
+        what = (", ".join(f"{r.hex} in {r.language}" for _, r in missing.iterrows()) if kind == "name"
+                else ", ".join(f"{r['name']} ({r.language})" for _, r in missing.iterrows()))
+        show(f"<b>Read {len(t) - len(missing)} of {len(t)} answers.</b> {small('Missing: ' + _h(what) + '. Ask your AI again for those, or carry on without them.')}")
     else:
-        values = [boxes[n].value.strip() for n in sorted(boxes)]
-        filled = any(values)
-    if not filled:
-        raise ValueError("The boxes are empty: paste your AI's answers into them, then run this cell again.")
-    return _answers_table(values, rows, kind)
+        show(f"<b>Read all {len(t)} answers ✓</b>")
+    return t
 
 def answers_from_reply(reply, rows, kind):
     """Read a numbered reply into the same table as the boxes.
@@ -1985,5 +1971,5 @@ def safe(fn, *args, **kwargs):
     except Exception:
         return None
 
-TOOLKIT_VERSION = "2026-10-15 19:29"
+TOOLKIT_VERSION = "2026-10-15 19:50"
 print(f"Toolkit ready ✓  version {TOOLKIT_VERSION}  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))

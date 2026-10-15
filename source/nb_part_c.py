@@ -64,7 +64,7 @@ show('<table class="babel"><tr><th>Language</th><th>Names to test</th></tr>' + "
 
 md("""## 2 · Ask the AI system for the best example of each name
 
-The prompt asks for the colour that a native speaker would consider the **best example** of each name: the most typical instance, not the average and not a brand colour. As in Part B, use the AI you use day to day, and the same one as in Part B so the two parts can be compared. The next cell gives you the prompt with **Copy prompt** and buttons for ChatGPT, Claude and Gemini, and numbered boxes: paste the colour code your AI gives for 1 into box 1, and so on."""),
+The prompt asks for the colour that a native speaker would consider the **best example** of each name: the most typical instance, not the average and not a brand colour. As in Part B, use the AI you use day to day, and the same one as in Part B so the two parts can be compared. The next cell gives you the prompt with **Copy prompt** and buttons for ChatGPT, Claude and Gemini, and a box: paste the AI's whole reply into it in one go, and the notebook reads the colour codes itself."""),
 
 code("""items = "\\n".join(f"- {r.language}: {plain_with_roman(r)}" for _, r in names.iterrows())
 PROMPT_C = f\"\"\"You are helping with a cross-cultural colour naming study.
@@ -421,7 +421,7 @@ _k = _find(lambda s, t: t == "code" and "show_prompt(PROMPT_C, AI," in s)
 cells[_k] = code("".join(cells[_k]["source"]).replace("show_prompt(PROMPT_C, AI,", "show_prompt(PROMPT_C, PASTE,"))
 _k = _find(lambda s, t: t == "code" and s.startswith("if AI == PASTE:"))
 _lines = "".join(cells[_k]["source"]).split("\n")
-cells[_k] = code("\n".join(['pal = read_ai_colours(collected_answers(), names)       # the colour codes pasted into the boxes'] + _lines[4:]))
+cells[_k] = code("\n".join(['pal = read_ai_colours(collected_answers(), names)       # the colour codes read from the pasted reply'] + _lines[4:]))
 
 
 # ── polished outputs: the error summary is its own table ──

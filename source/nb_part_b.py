@@ -274,7 +274,7 @@ md("""## 6 · What does an AI system say?
 
 Now ask a current AI system to name the same colours in the same languages, and compare its answers with how speakers actually name them.
 
-**Which AI?** Use the AI you use day to day: the comparison is most meaningful that way. The next cell shows the prompt with buttons for ChatGPT, Claude and Gemini. Each button copies the prompt and opens the tool; if the prompt isn't filled in there, paste it. Using another AI? Click **Copy prompt** and paste it there. Below the prompt is one numbered row per test colour: paste the names your AI gives into the boxes."""),
+**Which AI?** Use the AI you use day to day: the comparison is most meaningful that way. The next cell shows the prompt with buttons for ChatGPT, Claude and Gemini. Each button copies the prompt and opens the tool; if the prompt isn't filled in there, paste it. Using another AI? Click **Copy prompt** and paste it there. Below the prompt is a box: paste the AI's whole reply into it in one go, and the notebook reads the names itself."""),
 
 code("""lang_note = "; ".join(f"{l}" + (" (spoken by the Himba of northern Namibia)" if l == "OtjiHimba" else "")
                       for l in LANGUAGES)
@@ -464,7 +464,7 @@ _k = _find(lambda s, t: t == "code" and "show_prompt(PROMPT_B, AI," in s)
 cells[_k] = code("".join(cells[_k]["source"]).replace("show_prompt(PROMPT_B, AI,", "show_prompt(PROMPT_B, PASTE,"))
 _k = _find(lambda s, t: t == "code" and s.startswith("if AI == PASTE:"))
 _lines = "".join(cells[_k]["source"]).split("\n")
-cells[_k] = code("\n".join(['ai_names = collected_answers()                         # the names pasted into the boxes'] + _lines[4:]))
+cells[_k] = code("\n".join(['ai_names = collected_answers()                         # the names read from the pasted reply'] + _lines[4:]))
 
 
 # ── one story: your palette, your language, your audience ──
@@ -583,3 +583,41 @@ _i = next(k for k, c in enumerate(cells) if c["cell_type"] == "markdown" and "".
 _src = "".join(cells[_i]["source"])
 _head, _rest = _src.split("\n\n", 1)
 cells[_i] = md(_head + "\n\n" + '<img src="https://raw.githubusercontent.com/akvilesinkeviciute/colour-brings-people-together/v1.0/images/colour_spinner.png" alt="The Colour Spinner" width="560">\n\n*The Colour Spinner\'s six linked views: Picker, Namer, Thesaurus, Translator, Mapper and Profiler, with controls for language and for colour vision deficiency and ageing simulations.*' + "\n\n" + _rest)
+
+
+# ── order: meet the palette → how it looks to different eyes → choose → test the choice ──
+def _src(k): return "".join(cells[k]["source"])
+_ctx_md, _ctx_code, _meas_md, _meas_code = cells[6], cells[7], cells[8], cells[9]
+_choose_md, _choose_code = cells[4], cells[5]
+assert _src(6).startswith("## 3 · Can everyone tell") and "show_conditions(SDG.hex" in _src(7)
+assert _src(8).startswith("**Now your palette.**") and "nearest_neighbours(PICK)" in _src(9)
+
+_ctx = _src(6).replace("## 3 · Can everyone tell your colours apart?", "## 2 · How the palette looks to different eyes", 1)
+_ctx = _ctx.replace("**First, some context:** the whole UN palette under each condition,",
+                    "Before you choose, see the whole UN palette under each condition,", 1)
+_ctx = _ctx.rstrip() + ("\n\nLook for colours that **merge**: pairs that are easy to tell apart in the top row but look "
+                        "alike further down. You'll test some of them in section 4.")
+_choose = _src(4).replace("## 2 · Your palette, your language and your audience", "## 3 · Your palette, your language and your audience", 1)
+_choose = _choose.replace(
+    "Good choices mix an easy colour with a hard one: one of the reds (1, 4, 5, 8), one of the blues (6, 14, 16, 17) and something in between such as 12.",
+    "Choose colours you'd expect to cause trouble, such as a pair that merged in the grid above, alongside ones that looked robust. "
+    "Mixing an easy colour with a hard one works well: one of the reds (1, 4, 5, 8), one of the blues (6, 14, 16, 17) and something in between such as 12.", 1)
+_choose = _choose.replace("fill in the boxes in section 4.", "fill in the boxes in section 5.")
+_meas = ("## 4 · Can everyone tell your colours apart?\n\n" +
+         _src(8).replace("**Now your palette.** For each of your test colours,", "Now test your choice. For each of your test colours,", 1) +
+         "\n\nDid the colours you expected to merge actually come out close? Sometimes two colours that looked fine in the grid "
+         "are closer than they seemed, and the numbers show by how much.")
+cells[4:10] = [md(_ctx), _ctx_code, md(_choose), _choose_code, md(_meas), _meas_code]
+
+for _k, _c in enumerate(cells):
+    if _c["cell_type"] != "markdown": continue
+    _s = _src(_k)
+    for _a, _b in [("## 4 · Do you and your audience", "## 5 · Do you and your audience"),
+                   ("## 5 · Two axes, one picture", "## 6 · Two axes, one picture"),
+                   ("## 6 · Does an AI name them", "## 7 · Does an AI name them"),
+                   ("## 7 · Save your results for Part C", "## 8 · Save your results for Part C")]:
+        _s = _s.replace(_a, _b)
+    cells[_k] = md(_s)
+for _k, _c in enumerate(cells):
+    if _c["cell_type"] == "code" and "chose in section 2" in _src(_k):
+        cells[_k] = code(_src(_k).replace("chose in section 2", "chose in section 3"), hidden=False)

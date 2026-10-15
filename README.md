@@ -26,7 +26,7 @@ Part A, the *Colours of Babel* card game, needs no laptop.
 3. Run each cell in order with **Shift + Enter**. You only need to change the grey form fields on the right of some cells.
 4. At the end of Part B, download `partB_results.csv`; Part C starts from it.
 
-For the AI steps, use the AI you use day to day. The notebook shows the prompt with **Copy prompt** and buttons for ChatGPT, Claude and Gemini; each button copies the prompt and opens the tool. You then paste the AI's answers into numbered boxes.
+For the AI steps, use the AI you use day to day. The notebook shows the prompt with **Copy prompt** and buttons for ChatGPT, Claude and Gemini; each button copies the prompt and opens the tool. You then paste the AI's whole reply into one box, and the notebook reads the answers itself.
 
 ## What's in this repository
 
