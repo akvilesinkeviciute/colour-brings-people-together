@@ -39,21 +39,21 @@ Tick the **languages** to audit, two or more. The Colour Spinner currently cover
 **Backend.** *Colour Spinner API* fetches everything for you. If the network is slow, choose *Copied from the browser* and fill in the sheet in section 4."""),
 
 code("""#@title Your pair's choices { run: "auto" }
-SUBSET = "1, 6, 12, 14"  #@param {type:"string"}
-SOURCE_LANGUAGE = "British English"  #@param ["American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]
+Subset = "1, 6, 12, 14"  #@param {type:"string"}
+SourceLanguage = "British English"  #@param ["American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]
 #@markdown **Target languages** (tick any):
-American_English = False  #@param {type:"boolean"}
-British_English = True  #@param {type:"boolean"}
+AmericanEnglish = False  #@param {type:"boolean"}
+BritishEnglish = True  #@param {type:"boolean"}
 French = False  #@param {type:"boolean"}
 Greek = True  #@param {type:"boolean"}
 OtjiHimba = True  #@param {type:"boolean"}
 Spanish = True  #@param {type:"boolean"}
-BACKEND = "Colour Spinner API"  #@param ["Colour Spinner API", "Copied from the browser"]
+Backend = "Colour Spinner API"  #@param ["Colour Spinner API", "Copied from the browser"]
 
-ticked = {"American English": American_English, "British English": British_English,
+ticked = {"American English": AmericanEnglish, "British English": BritishEnglish,
           "French": French, "Greek": Greek, "OtjiHimba": OtjiHimba, "Spanish": Spanish}
-LANGUAGES = [SOURCE_LANGUAGE] + [l for l, on in ticked.items() if on and l != SOURCE_LANGUAGE]
-PICK = [int(s) for s in re.findall(r"\\d+", SUBSET) if 1 <= int(s) <= 17]
+LANGUAGES = [SourceLanguage] + [l for l, on in ticked.items() if on and l != SourceLanguage]
+PICK = [int(s) for s in re.findall(r"\\d+", Subset) if 1 <= int(s) <= 17]
 sub = SDG.loc[PICK]
 
 show_palette(sub.hex.tolist(), labels=[f"SDG {i}" for i in sub.index], captions=sub.goal.tolist(),
@@ -75,7 +75,7 @@ md("""The chart below makes "merge" measurable. For each colour in your subset i
 **A note on the distances.** All colour differences in this notebook are CIEDE2000 (ΔE00). CIEDE2000 was derived from colour-difference judgements by observers with typical colour vision. Applied to simulated colours, it estimates how different those colours would look to a typical observer, which only approximates what people with a colour vision deficiency or an older eye can tell apart."""),
 
 code("""#@title Nearest-neighbour distinctiveness { run: "auto" }
-CONFUSABLE_BELOW_DELTA_E = 10  #@param {type:"slider", min:3, max:25, step:1}
+ConfusableBelow = 10  #@param {type:"slider", min:3, max:25, step:1}
 
 def nearest(sdg_id, condition):
     me = simulate(SDG.hex[sdg_id], condition)
@@ -86,23 +86,23 @@ nn = pd.DataFrame({c: {i: nearest(i, c) for i in PICK} for c in CONDITIONS})
 nn_de = nn.map(lambda t: t[0]); nn_id = nn.map(lambda t: t[1])
 
 fig, ax = plt.subplots(figsize=(1.1 * len(CONDITIONS) + 1.6, 0.62 * len(PICK) + 1.4))
-ax.imshow(nn_de.values, cmap=RISK_CMAP, vmin=0, vmax=2 * CONFUSABLE_BELOW_DELTA_E, aspect="auto")
+ax.imshow(nn_de.values, cmap=RISK_CMAP, vmin=0, vmax=2 * ConfusableBelow, aspect="auto")
 for (r, c), v in np.ndenumerate(nn_de.values):
-    ink = "white" if v < CONFUSABLE_BELOW_DELTA_E * 0.6 else INK
+    ink = "white" if v < ConfusableBelow * 0.6 else INK
     ax.text(c, r - 0.08, f"{v:.1f}", ha="center", va="center", fontsize=11, fontweight="bold", color=ink)
     ax.text(c, r + 0.27, f"vs {nn_id.values[r, c]}", ha="center", va="center", fontsize=8, color=ink)
 ax.set_xticks(range(len(CONDITIONS)), [condition_label(c) for c in CONDITIONS], rotation=30, ha="right")
 row_chips(ax, [SDG.hex[i] for i in PICK], [f"SDG {i}" for i in PICK])
 ax.tick_params(axis="x", length=0)
 for s in ax.spines.values(): s.set_visible(False)
-ax.set_title(f"Distance to the nearest other SDG colour (ΔE00); red cells fall below {CONFUSABLE_BELOW_DELTA_E}")
+ax.set_title(f"Distance to the nearest other SDG colour (ΔE00); red cells fall below {ConfusableBelow}")
 plt.tight_layout(); plt.show()
 
 at_risk = {}
 for i in PICK:
     for c in CONDITIONS:
         j, d = nn_id.loc[i, c], nn_de.loc[i, c]
-        if d < CONFUSABLE_BELOW_DELTA_E:
+        if d < ConfusableBelow:
             at_risk.setdefault(tuple(sorted((i, j))), []).append((c, d))
 if at_risk:
     rows = ""
@@ -110,12 +110,12 @@ if at_risk:
         worst_c = min(hits, key=lambda t: t[1])[0]
         chips = "".join(f'<div class="mini" style="background:{simulate(SDG.hex[k], worst_c)}"></div>' for k in (i, j))
         rows += (f'<tr><td><div class="row">{chips}</div></td><td><b>SDG {i} and {j}</b></td><td>' +
-                 " ".join(f'<span style="white-space:nowrap">{_h(c)} {de_badge(d, CONFUSABLE_BELOW_DELTA_E, small_is_good=False)}</span>'
+                 " ".join(f'<span style="white-space:nowrap">{_h(c)} {de_badge(d, ConfusableBelow, small_is_good=False)}</span>'
                           for c, d in hits) + "</td></tr>")
     show('<b>Pairs at risk</b>, shown as they look under the condition where they are closest'
          f'<table class="babel">{rows}</table>')
 else:
-    show(f"Every colour in your subset stays at least ΔE00 {CONFUSABLE_BELOW_DELTA_E} from its nearest neighbour under every condition.")"""),
+    show(f"Every colour in your subset stays at least ΔE00 {ConfusableBelow} from its nearest neighbour under every condition.")"""),
 
 md("""## 4 · The cognitive axis: what are these colours called?
 
@@ -135,7 +135,7 @@ hex, language, name, confidence, best_example
 """),
 
 code("""#@title Ask the Colour Spinner
-spinner = ApiSpinner() if BACKEND == "Colour Spinner API" else SheetSpinner(SHEET)
+spinner = ApiSpinner() if Backend == "Colour Spinner API" else SheetSpinner(SHEET)
 
 records, problems = [], []
 for i in PICK:
@@ -209,7 +209,7 @@ for i in PICK:
         b = r.best_example.iloc[0]
         cells += (f'<td><div class="pair" style="width:110px"><div style="background:{b};color:{_ink_on(b)}">'
                   f'{_h(r.name.iloc[0])}<br>{b}</div></div><div style="margin-top:3px">'
-                  f'{de_badge(r.drift.iloc[0], CONFUSABLE_BELOW_DELTA_E)}</div></td>')
+                  f'{de_badge(r.drift.iloc[0], ConfusableBelow)}</div></td>')
     sp = spread(sub_n.best_example.tolist())
     rows += (f'<tr><td><div class="pair" style="width:96px"><div style="background:{SDG.hex[i]};color:{_ink_on(SDG.hex[i])};'
              f'font-weight:700;font-size:13px">SDG {i}</div></div></td>{cells}'
@@ -243,7 +243,7 @@ md("""## 5 · Two axes, one picture
 Each disc is a test colour. Across: its **perceptual distance**, the ΔE00 to the nearest other SDG colour, for typical colour vision unless you choose another condition in the form. Up: its **naming confidence**, averaged over your languages unless you choose one. Both axes run from 0 to 1, so the two are on the same scale. The grey circle marks where the two thresholds meet. The table underneath gives the numbers, with each language's name and confidence."""),
 
 code("""#@title Scorecard { run: "auto" }
-HARD_TO_NAME_BELOW_CONFIDENCE = 0.5  #@param {type:"slider", min:0.2, max:0.9, step:0.05}
+HardToNameBelow = 0.5  #@param {type:"slider", min:0.2, max:0.9, step:0.05}
 #@markdown A colour whose top name has a Spinner confidence below this counts as hard to name.
 
 score = pd.DataFrame({
@@ -254,8 +254,8 @@ score = pd.DataFrame({
 }).loc[PICK]
 
 fig, ax = plt.subplots(figsize=(7.5, 6))
-xmax = max(2.2 * CONFUSABLE_BELOW_DELTA_E, score.worst_case_dE00.max() * 1.15)
-ax.axvline(CONFUSABLE_BELOW_DELTA_E, color="#BDBDB8", ls="--", lw=1); ax.axhline(HARD_TO_NAME_BELOW_CONFIDENCE, color="#BDBDB8", ls="--", lw=1)
+xmax = max(2.2 * ConfusableBelow, score.worst_case_dE00.max() * 1.15)
+ax.axvline(ConfusableBelow, color="#BDBDB8", ls="--", lw=1); ax.axhline(HardToNameBelow, color="#BDBDB8", ls="--", lw=1)
 for x, y, t in [(0.02, 0.98, "named, but easily confused"), (0.98, 0.98, "robust on both axes"),
                 (0.02, 0.02, "fragile on both axes"), (0.98, 0.02, "distinct, but hard to name")]:
     ax.text(x, y, t, transform=ax.transAxes, ha="left" if x < .5 else "right",
@@ -274,12 +274,7 @@ md("""## 6 · What does an AI system say?
 
 Now ask a current AI system to name the same colours in the same languages, and compare its answers with how speakers actually name them.
 
-**Which AI?** Use the AI you use day to day (ChatGPT, Claude, Gemini, Copilot, …): the comparison is most meaningful that way, and it's what the boxes below are for. Colab's built-in Gemini is also offered, for demonstration.
-
-Choose in the form below:
-
-- **Colab's Gemini:** choose it in the form and run the cells in order. It's for demonstration and stops working once Colab's free usage limit is reached.
-- **Your own AI:** keep *Paste answers from my own AI*. The next cell shows a prompt to copy into your AI tool, and one numbered row per test colour, with its colour code filled in and a box for each language: paste in the names your AI gives."""),
+**Which AI?** Use the AI you use day to day: the comparison is most meaningful that way. The next cell shows the prompt with buttons for ChatGPT, Claude and Gemini. Each button copies the prompt and opens the tool; if the prompt isn't filled in there, paste it. Using another AI? Click **Copy prompt** and paste it there. Below the prompt is one numbered row per test colour: paste the names your AI gives into the boxes."""),
 
 code("""lang_note = "; ".join(f"{l}" + (" (spoken by the Himba of northern Namibia)" if l == "OtjiHimba" else "")
                       for l in LANGUAGES)
@@ -295,7 +290,7 @@ Reply with one line for every colour and language, and nothing else, in exactly 
 print(PROMPT_B)"""),
 
 code("""#@title AI system
-AI_PROVIDER = "Gemini built into Colab (no key needed)"  #@param ["Gemini built into Colab (no key needed)", "Paste the reply myself", "Anthropic", "OpenAI-compatible"]
+AI = "Gemini built into Colab (no key needed)"  #@param ["Gemini built into Colab (no key needed)", "Paste the reply myself", "Anthropic", "OpenAI-compatible"]
 AI_MODEL = ""  #@param {type:"string"}
 AI_BASE_URL = ""  #@param {type:"string"}
 #@markdown Colab's Gemini is for demonstration; any AI you regularly use works via *Paste the reply myself*.
@@ -307,7 +302,7 @@ paste the AI's reply here, only if you chose "Paste the reply myself"
 \"\"\"
 """),
 
-code("""reply_b = AI_REPLY if AI_PROVIDER.startswith("Paste") else ask_ai(PROMPT_B, AI_PROVIDER, AI_MODEL, AI_BASE_URL)
+code("""reply_b = AI_REPLY if AI.startswith("Paste") else ask_ai(PROMPT_B, AI, AI_MODEL, AI_BASE_URL)
 ai_names = pd.DataFrame(parse_json_reply(reply_b))
 ai_names["hex"] = ai_names["hex"].map(parse_colour)
 ai_names = ai_names.rename(columns={"name": "ai_name"})[["hex", "language", "ai_name"]]
@@ -361,21 +356,21 @@ def _set(i, src, hidden=None):
     cells[i] = code(src, hidden=hidden)
 
 _form = "".join(cells[5]["source"]).split("ticked = ")[0]
-_set(5, _form + """ticked = {"American English": American_English, "British English": British_English,
+_set(5, _form + """ticked = {"American English": AmericanEnglish, "British English": BritishEnglish,
           "French": French, "Greek": Greek, "OtjiHimba": OtjiHimba, "Spanish": Spanish}
-LANGUAGES = pick_languages(SOURCE_LANGUAGE, ticked)
-PICK = parse_subset(SUBSET)
+LANGUAGES = pick_languages(SourceLanguage, ticked)
+PICK = parse_subset(Subset)
 show_subset(PICK, LANGUAGES)""")
 
 _set(9, """#@title Nearest-neighbour distinctiveness { run: "auto" }
-CONFUSABLE_BELOW_DELTA_E = 10  #@param {type:"slider", min:3, max:25, step:1}
+ConfusableBelow = 10  #@param {type:"slider", min:3, max:25, step:1}
 #@markdown Two colours closer than this CIEDE2000 colour difference count as easily confused. About 1 is just noticeable side by side; 10 is a common rule of thumb for telling colours apart at a glance.
 
 nn_de, nn_id = nearest_neighbours(PICK)      # ΔE00 to the nearest other SDG colour, per condition
-plot_nearest_neighbours(nn_de, nn_id, CONFUSABLE_BELOW_DELTA_E)
-show_at_risk(nn_de, nn_id, CONFUSABLE_BELOW_DELTA_E)""")
+plot_nearest_neighbours(nn_de, nn_id, ConfusableBelow)
+show_at_risk(nn_de, nn_id, ConfusableBelow)""")
 
-_set(12, """spinner = connect(BACKEND, SHEET)
+_set(12, """spinner = connect(Backend, SHEET)
 
 rows, problems = [], []
 for sdg in PICK:
@@ -396,33 +391,33 @@ report_problems(problems)
 show_names_table(naming, LANGUAGES)""")
 
 _set(14, "plot_nameability(naming, PICK, LANGUAGES)")
-_set(16, "show_translatability(naming, PICK, LANGUAGES, CONFUSABLE_BELOW_DELTA_E)")
+_set(16, "show_translatability(naming, PICK, LANGUAGES, ConfusableBelow)")
 _set(18, "plot_name_map(naming, PICK, LANGUAGES)")
 _set(20, """#@title Scorecard { run: "auto" }
-HARD_TO_NAME_BELOW_CONFIDENCE = 0.5  #@param {type:"slider", min:0.2, max:0.9, step:0.05}
+HardToNameBelow = 0.5  #@param {type:"slider", min:0.2, max:0.9, step:0.05}
 #@markdown A colour whose top name has a Spinner confidence below this counts as hard to name.
 
 score = scorecard(nn_de, naming)
-plot_two_axes(score, CONFUSABLE_BELOW_DELTA_E, HARD_TO_NAME_BELOW_CONFIDENCE)
+plot_two_axes(score, ConfusableBelow, HardToNameBelow)
 display(score.round(2))""")
-_set(25, """reply_b = ai_reply(PROMPT_B, AI_PROVIDER, AI_MODEL, AI_BASE_URL, pasted=AI_REPLY)
+_set(25, """reply_b = ai_reply(PROMPT_B, AI, AI_MODEL, AI_BASE_URL, pasted=AI_REPLY)
 ai_names = read_ai_names(reply_b)
 
 comparison = naming.merge(ai_names, on=["hex", "language"], how="left")
 comparison["agrees"] = [same_name(ai, name, rom)    # any script; ignores case and accents
                         for ai, name, rom in zip(comparison.ai_name, comparison.name, comparison.romanized)]
 comparison = where_ai_names_point(comparison, spinner)   # Mapper: where each differing AI name is centred
-show_name_comparison(comparison, CONFUSABLE_BELOW_DELTA_E)
+show_name_comparison(comparison, ConfusableBelow)
 plot_agreement_by_language(comparison, LANGUAGES)""")
 
 
 # ── AI step: choose first, then prompt (+ paste box), then read the reply ──
 _p = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "PROMPT_B = f" in "".join(c["source"]))
-_prompt_src = "".join(cells[_p]["source"]).replace("print(PROMPT_B)", "show_prompt(PROMPT_B, AI_PROVIDER)")
+_prompt_src = "".join(cells[_p]["source"]).replace("print(PROMPT_B)", "show_prompt(PROMPT_B, AI)")
 _form = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "".join(c["source"]).startswith("#@title AI system"))
 _reply = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "".join(c["source"]).startswith("AI_REPLY ="))
 assert _p < _form < _reply
-cells[_p] = code('#@title Which AI?\nAI_PROVIDER = "Gemini built into Colab (no key needed)"  #@param ["Gemini built into Colab (no key needed)", "Paste the reply from my own AI", "Anthropic", "OpenAI-compatible"]\nAI_MODEL = ""  #@param {type:"string"}\nAI_BASE_URL = ""  #@param {type:"string"}\n#@markdown **Gemini built into Colab** needs nothing more: just run the cells below.\n#@markdown **Your own AI** (ChatGPT, Claude, Copilot, …): choose *Paste the reply from my own AI*; the next cell gives you the prompt and a box to paste the reply into.\n#@markdown *Anthropic* and *OpenAI-compatible* call an API with your own key from Colab ▸ Secrets (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`) and a model name. Leave AI_MODEL empty for Colab\'s default Gemini.')
+cells[_p] = code('#@title Which AI?\nAI = "Gemini built into Colab (no key needed)"  #@param ["Gemini built into Colab (no key needed)", "Paste the reply from my own AI", "Anthropic", "OpenAI-compatible"]\nAI_MODEL = ""  #@param {type:"string"}\nAI_BASE_URL = ""  #@param {type:"string"}\n#@markdown **Gemini built into Colab** needs nothing more: just run the cells below.\n#@markdown **Your own AI** (ChatGPT, Claude, Copilot, …): choose *Paste the reply from my own AI*; the next cell gives you the prompt and a box to paste the reply into.\n#@markdown *Anthropic* and *OpenAI-compatible* call an API with your own key from Colab ▸ Secrets (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`) and a model name. Leave AI_MODEL empty for Colab\'s default Gemini.')
 cells[_form] = code(_prompt_src)
 del cells[_reply]
 _r = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "reply_b = ai_reply" in "".join(c["source"]))
@@ -432,32 +427,41 @@ cells[_r] = code("".join(cells[_r]["source"]).replace(", pasted=AI_REPLY", ""))
 # ── round of notes, October 2026 ──
 def _find(pred):
     return next(k for k, c in enumerate(cells) if pred("".join(c["source"]), c["cell_type"]))
-cells[_find(lambda s, t: t == "code" and s.startswith("#@title Which AI?"))] = code('#@title Which AI?\nAI_PROVIDER = "Paste answers from my own AI"  #@param ["Paste answers from my own AI", "Gemini built into Colab"]\n#@markdown **Your own AI** (ChatGPT, Claude, Gemini, Copilot, …): the next cell shows a prompt to copy into it and one box per colour and language. The colour codes are filled in for you; just copy in the names your AI gives.\n#@markdown **Gemini built into Colab** is for demonstration. It needs no set-up but stops working once Colab\'s free usage limit is reached.')
-cells[_find(lambda s, t: t == "code" and "PROMPT_B = f" in s)] = code('lines = "\\n".join(f"{r.hex} | {r.language}" for _, r in naming.iterrows())\nhimba = "\\n(OtjiHimba is spoken by the Himba of northern Namibia.)" if "OtjiHimba" in LANGUAGES else ""\nPROMPT_B = f"""You are helping with a cross-cultural colour naming study.\nFor each colour code and language below, give the single colour name that most native speakers of that\nlanguage would use for it. Write each name in that language and in its usual script; for a non-Latin\nscript, add the Latin spelling in brackets.{himba}\n\n{lines}\n\nReply with exactly one line for each, in this format and nothing else:\n#E5243B | {LANGUAGES[-1]} | name"""\nshow_prompt(PROMPT_B, AI_PROVIDER, rows=naming[["hex", "language"]], kind="name")')
-cells[_find(lambda s, t: t == "code" and "PROMPT_B, AI_PROVIDER" in s and "comparison" in s)] = code('if AI_PROVIDER == PASTE:\n    ai_names = collected_answers()                        # the names typed into the boxes\nelse:\n    ai_names = read_ai_names(ask_ai(PROMPT_B, AI_PROVIDER))\nai_names["language"] = ai_names["language"].map(canonical_language)\n\ncomparison = naming.merge(ai_names, on=["hex", "language"], how="left")\ncomparison["agrees"] = [same_name(ai, name, rom)    # any script; ignores case and accents\n                        for ai, name, rom in zip(comparison.ai_name, comparison.name, comparison.romanized)]\ncomparison = where_ai_names_point(comparison, spinner)   # Mapper: where each differing AI name is centred\nshow_name_comparison(comparison, CONFUSABLE_BELOW_DELTA_E)\nplot_agreement_by_language(comparison, LANGUAGES)')
-cells[_find(lambda s, t: t == "code" and "card = scorecard" in s or "score = scorecard" in s)] = code('#@title Scorecard { run: "auto" }\nSCORE_LANGUAGE = "Average of my languages"  #@param ["Average of my languages", "American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]\nSCORE_CONDITION = "Typical"  #@param ["Typical", "Protanopia", "Deuteranopia", "Tritanopia", "Age 40", "Age 60", "Age 80", "Worst case of all conditions"]\nNORMALISE_BY = "Largest value in my subset"  #@param ["Largest value in my subset", "Range across all 17 SDG colours"]\nHARD_TO_NAME_BELOW_CONFIDENCE = 0.5  #@param {type:"slider", min:0.2, max:0.9, step:0.05}\n#@markdown **SCORE_LANGUAGE**: whose naming confidence to plot; choose one of the languages you ticked in section 2, or the average. **SCORE_CONDITION**: whose vision the perceptual distance is for (*Typical* = typical colour vision).\n#@markdown A colour whose top name has a Spinner confidence below **HARD_TO_NAME_BELOW_CONFIDENCE** counts as hard to name.\n\ncard = scorecard(PICK, naming, SCORE_LANGUAGE, SCORE_CONDITION, NORMALISE_BY)\nplot_two_axes(card, CONFUSABLE_BELOW_DELTA_E, HARD_TO_NAME_BELOW_CONFIDENCE)\nshow_scorecard(card)', hidden=False)
+cells[_find(lambda s, t: t == "code" and s.startswith("#@title Which AI?"))] = code('#@title Which AI?\nAI = "Paste answers from my own AI"  #@param ["Paste answers from my own AI", "Gemini built into Colab"]\n#@markdown **Your own AI** (ChatGPT, Claude, Gemini, Copilot, …): the next cell shows a prompt to copy into it and one box per colour and language. The colour codes are filled in for you; just copy in the names your AI gives.\n#@markdown **Gemini built into Colab** is for demonstration. It needs no set-up but stops working once Colab\'s free usage limit is reached.')
+cells[_find(lambda s, t: t == "code" and "PROMPT_B = f" in s)] = code('lines = "\\n".join(f"{r.hex} | {r.language}" for _, r in naming.iterrows())\nhimba = "\\n(OtjiHimba is spoken by the Himba of northern Namibia.)" if "OtjiHimba" in LANGUAGES else ""\nPROMPT_B = f"""You are helping with a cross-cultural colour naming study.\nFor each colour code and language below, give the single colour name that most native speakers of that\nlanguage would use for it. Write each name in that language and in its usual script; for a non-Latin\nscript, add the Latin spelling in brackets.{himba}\n\n{lines}\n\nReply with exactly one line for each, in this format and nothing else:\n#E5243B | {LANGUAGES[-1]} | name"""\nshow_prompt(PROMPT_B, AI, rows=naming[["hex", "language"]], kind="name")')
+cells[_find(lambda s, t: t == "code" and "PROMPT_B, AI" in s and "comparison" in s)] = code('if AI == PASTE:\n    ai_names = collected_answers()                        # the names typed into the boxes\nelse:\n    ai_names = read_ai_names(ask_ai(PROMPT_B, AI))\nai_names["language"] = ai_names["language"].map(canonical_language)\n\ncomparison = naming.merge(ai_names, on=["hex", "language"], how="left")\ncomparison["agrees"] = [same_name(ai, name, rom)    # any script; ignores case and accents\n                        for ai, name, rom in zip(comparison.ai_name, comparison.name, comparison.romanized)]\ncomparison = where_ai_names_point(comparison, spinner)   # Mapper: where each differing AI name is centred\nshow_name_comparison(comparison, ConfusableBelow)\nplot_agreement_by_language(comparison, LANGUAGES)')
+cells[_find(lambda s, t: t == "code" and "card = scorecard" in s or "score = scorecard" in s)] = code('#@title Scorecard { run: "auto" }\nLanguage = "Average of my languages"  #@param ["Average of my languages", "American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]\nVision = "Typical"  #@param ["Typical", "Protanopia", "Deuteranopia", "Tritanopia", "Age 40", "Age 60", "Age 80", "Worst case of all conditions"]\nNormalise = "Largest value in my subset"  #@param ["Largest value in my subset", "Range across all 17 SDG colours"]\nHardToNameBelow = 0.5  #@param {type:"slider", min:0.2, max:0.9, step:0.05}\n#@markdown **Language**: whose naming confidence to plot; choose one of the languages you ticked in section 2, or the average. **Vision**: whose vision the perceptual distance is for (*Typical* = typical colour vision).\n#@markdown A colour whose top name has a Spinner confidence below **HardToNameBelow** counts as hard to name.\n\ncard = scorecard(PICK, naming, Language, Vision, Normalise)\nplot_two_axes(card, ConfusableBelow, HardToNameBelow)\nshow_scorecard(card)', hidden=False)
 
 
 # ── languages chosen once; source language only where translating ──
-cells[_find(lambda s, t: t == "code" and s.startswith("#@title Your pair's choices"))] = code('#@title Your pair\'s choices { run: "auto" }\nSUBSET = "1, 6, 12, 14"  #@param {type:"string"}\n#@markdown **Languages to audit** (tick two or more):\nAmerican_English = False  #@param {type:"boolean"}\nBritish_English = True  #@param {type:"boolean"}\nFrench = False  #@param {type:"boolean"}\nGreek = True  #@param {type:"boolean"}\nOtjiHimba = True  #@param {type:"boolean"}\nSpanish = True  #@param {type:"boolean"}\nBACKEND = "Colour Spinner API"  #@param ["Colour Spinner API", "Copied from the browser"]\n\nticked = {"American English": American_English, "British English": British_English,\n          "French": French, "Greek": Greek, "OtjiHimba": OtjiHimba, "Spanish": Spanish}\nLANGUAGES = [language for language, on in ticked.items() if on]\nPICK = parse_subset(SUBSET)\nshow_subset(PICK, LANGUAGES)')
-cells[_find(lambda s, t: t == "code" and s.strip().startswith("show_translatability("))] = code('#@title Translatability { run: "auto" }\nSOURCE_LANGUAGE = "British English"  #@param ["American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]\n#@markdown The language to translate **from**. Every other language you ticked is a **target language**.\n\nshow_translatability(naming, PICK, LANGUAGES, CONFUSABLE_BELOW_DELTA_E, source=SOURCE_LANGUAGE)', hidden=False)
+cells[_find(lambda s, t: t == "code" and s.startswith("#@title Your pair's choices"))] = code('#@title Your pair\'s choices { run: "auto" }\nSubset = "1, 6, 12, 14"  #@param {type:"string"}\n#@markdown **Languages to audit** (tick two or more):\nAmericanEnglish = False  #@param {type:"boolean"}\nBritishEnglish = True  #@param {type:"boolean"}\nFrench = False  #@param {type:"boolean"}\nGreek = True  #@param {type:"boolean"}\nOtjiHimba = True  #@param {type:"boolean"}\nSpanish = True  #@param {type:"boolean"}\nBackend = "Colour Spinner API"  #@param ["Colour Spinner API", "Copied from the browser"]\n\nticked = {"American English": AmericanEnglish, "British English": BritishEnglish,\n          "French": French, "Greek": Greek, "OtjiHimba": OtjiHimba, "Spanish": Spanish}\nLANGUAGES = [language for language, on in ticked.items() if on]\nPICK = parse_subset(Subset)\nshow_subset(PICK, LANGUAGES)')
+cells[_find(lambda s, t: t == "code" and s.strip().startswith("show_translatability("))] = code('#@title Translatability { run: "auto" }\nSourceLanguage = "British English"  #@param ["American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]\n#@markdown The language to translate **from**. Every other language you ticked is a **target language**.\n\nshow_translatability(naming, PICK, LANGUAGES, ConfusableBelow, source=SourceLanguage)', hidden=False)
 
 
 # ── boxes instead of code for values copied from the browser ──
-cells[_find(lambda s, t: t == "code" and s.startswith('SHEET = """'))] = code("""#@title Only if BACKEND is "Copied from the browser"
-if BACKEND == "Copied from the browser":
+cells[_find(lambda s, t: t == "code" and s.startswith('SHEET = """'))] = code("""#@title Only if Backend is "Copied from the browser"
+if Backend == "Copied from the browser":
     sheet_boxes(PICK, LANGUAGES)      # one row of boxes per test colour and language
 else:
     show("You're using the Colour Spinner directly, so there's nothing to fill in here.")""", hidden=False)
-_k = _find(lambda s, t: t == "code" and s.startswith("spinner = connect(BACKEND, SHEET)"))
-cells[_k] = code("".join(cells[_k]["source"]).replace("connect(BACKEND, SHEET)", "connect(BACKEND)"))
+_k = _find(lambda s, t: t == "code" and s.startswith("spinner = connect(Backend, SHEET)"))
+cells[_k] = code("".join(cells[_k]["source"]).replace("connect(Backend, SHEET)", "connect(Backend)"))
 
 
 # ── numbered prompt and numbered answer boxes ──
-cells[_find(lambda s, t: t == "code" and "PROMPT_B = f" in s)] = code('lines = "\\n".join(numbered_items(naming[["hex", "language"]], "name"))\nhimba = "\\n(OtjiHimba is spoken by the Himba of northern Namibia.)" if "OtjiHimba" in LANGUAGES else ""\nPROMPT_B = f"""You are helping with a cross-cultural colour naming study.\nFor each numbered colour code below, give the single colour name that most native speakers of that\nlanguage would use for it. Write each name in that language and in its usual script; for a non-Latin\nscript, add the Latin spelling in brackets.{himba}\n\n{lines}\n\nReply with one line per number, in this format and nothing else:\n1. name\n2. …"""\nshow_prompt(PROMPT_B, AI_PROVIDER, rows=naming[["hex", "language"]], kind="name")')
-_k = _find(lambda s, t: t == "code" and 'ai_names = read_ai_names(ask_ai(PROMPT_B, AI_PROVIDER))' in s)
-cells[_k] = code("".join(cells[_k]["source"]).replace('ai_names = read_ai_names(ask_ai(PROMPT_B, AI_PROVIDER))', 'ai_names = answers_from_reply(ask_ai(PROMPT_B, AI_PROVIDER), naming[["hex", "language"]], "name")'))
+cells[_find(lambda s, t: t == "code" and "PROMPT_B = f" in s)] = code('lines = "\\n".join(numbered_items(naming[["hex", "language"]], "name"))\nhimba = "\\n(OtjiHimba is spoken by the Himba of northern Namibia.)" if "OtjiHimba" in LANGUAGES else ""\nPROMPT_B = f"""You are helping with a cross-cultural colour naming study.\nFor each numbered colour code below, give the single colour name that most native speakers of that\nlanguage would use for it. Write each name in that language and in its usual script; for a non-Latin\nscript, add the Latin spelling in brackets.{himba}\n\n{lines}\n\nReply with one line per number, in this format and nothing else:\n1. name\n2. …"""\nshow_prompt(PROMPT_B, AI, rows=naming[["hex", "language"]], kind="name")')
+_k = _find(lambda s, t: t == "code" and 'ai_names = read_ai_names(ask_ai(PROMPT_B, AI))' in s)
+cells[_k] = code("".join(cells[_k]["source"]).replace('ai_names = read_ai_names(ask_ai(PROMPT_B, AI))', 'ai_names = answers_from_reply(ask_ai(PROMPT_B, AI), naming[["sdg", "hex", "language"]], "name")'))
 
 
 # ── one numbered row per test colour, a box per language ──
-cells[_find(lambda s, t: t == "code" and "PROMPT_B = f" in s)] = code('lines = "\\n".join(numbered_items(naming, "name"))          # one number per test colour\nhimba = "\\n(OtjiHimba is spoken by the Himba of northern Namibia.)" if "OtjiHimba" in LANGUAGES else ""\nreply_format = " | ".join(f"{language}: name" for language in LANGUAGES)\nPROMPT_B = f"""You are helping with a cross-cultural colour naming study.\nFor each numbered colour code below, give the single colour name that most native speakers would use for it in each of these languages: {", ".join(LANGUAGES)}. Write each name in that language and in its usual script; for a non-Latin script, add the Latin spelling in brackets.{himba}\n\n{lines}\n\nReply with one line per number, in this format and nothing else:\n{PICK[0]}. {reply_format}\n…"""\nshow_prompt(PROMPT_B, AI_PROVIDER, rows=naming[["sdg", "hex", "language"]], kind="name")')
+cells[_find(lambda s, t: t == "code" and "PROMPT_B = f" in s)] = code('lines = "\\n".join(numbered_items(naming, "name"))          # one number per test colour\nhimba = "\\n(OtjiHimba is spoken by the Himba of northern Namibia.)" if "OtjiHimba" in LANGUAGES else ""\nreply_format = " | ".join(f"{language}: name" for language in LANGUAGES)\nPROMPT_B = f"""You are helping with a cross-cultural colour naming study.\nFor each numbered colour code below, give the single colour name that most native speakers would use for it in each of these languages: {", ".join(LANGUAGES)}. Write each name in that language and in its usual script; for a non-Latin script, add the Latin spelling in brackets.{himba}\n\n{lines}\n\nReply with one line per number, in this format and nothing else:\n{PICK[0]}. {reply_format}\n…"""\nshow_prompt(PROMPT_B, AI, rows=naming[["sdg", "hex", "language"]], kind="name")')
+
+
+# ── one AI route for everyone: buttons to open any AI, numbered boxes for the answers ──
+del cells[_find(lambda s, t: t == "code" and s.startswith("#@title Which AI?"))]
+_k = _find(lambda s, t: t == "code" and "show_prompt(PROMPT_B, AI," in s)
+cells[_k] = code("".join(cells[_k]["source"]).replace("show_prompt(PROMPT_B, AI,", "show_prompt(PROMPT_B, PASTE,"))
+_k = _find(lambda s, t: t == "code" and s.startswith("if AI == PASTE:"))
+_lines = "".join(cells[_k]["source"]).split("\n")
+cells[_k] = code("\n".join(['ai_names = collected_answers()                         # the names pasted into the boxes'] + _lines[4:]))

@@ -26,7 +26,7 @@ Everything lives in the public repository [akvilesinkeviciute/colour-brings-peop
 
 - The notebooks load `colour_masterclass.py` from the **`v1.0` release**, so the links work only once that release exists (Releases ▸ Create a new release ▸ tag `v1.0`).
 - The "Open in Colab" buttons in `README.md` also point at `v1.0`, so everyone gets the same version.
-- To fix something later, edit the files, publish a `v1.1` release, and change `v1.0` to `v1.1` in `TOOLKIT_URL` (first cell of each notebook, or `source/nbtools.py` before rebuilding) and in the README buttons. Copies people already saved keep working on `v1.0`.
+- To fix something later, edit the files, publish a `v1.1` release, and change `v1.0` to `v1.1` in `ToolkitURL` (first cell of each notebook; `TOOLKIT_URL` in `source/nbtools.py` before rebuilding) and in the README buttons. Copies people already saved keep working on `v1.0`.
 
 If GitHub can't be reached, participants can upload `colour_masterclass.py` in Colab's Files panel (folder icon, left) and rerun the first cell, which skips the download when the file is already there.
 
@@ -40,17 +40,16 @@ Run both notebooks on the venue network if you can. In Part B, the *Ask the Colo
 
 | Problem | What participants do |
 |---|---|
-| Spinner API unreachable | Set `BACKEND` to *Copied from the browser*. A row of boxes appears for each test colour and language; participants copy the Namer's name and confidence and the Mapper's best-example RGB from the Spinner in the browser. |
+| Spinner API unreachable | Set `Backend` to *Copied from the browser*. A row of boxes appears for each test colour and language; participants copy the Namer's name and confidence and the Mapper's best-example RGB from the Spinner in the browser. |
 | Spinner simulations unreachable | Sections 3 and 5 of Part B and the re-check in Part C show a message. Once the connection is back, run `retry_simulations()` and rerun those cells. Meanwhile, use the Spinner's "Simulate age/CVD" menu in the browser. |
-| Colab's built-in Gemini stops working (e.g. a usage-limit error) | Switch the form to *Paste answers from my own AI*, the default. Participants copy the prompt into any AI and type its answers into the boxes. |
 | Lost `partB_results.csv` | In Part C, choose *Type them in*: participants pick a language and type each colour name into the boxes. |
 | No Google account | Do the whole audit in the Spinner's browser interface. The notebooks are optional enrichment, as stated in the proposal. |
 
 ### The AI system
 
-The default is **Paste answers from my own AI**: the notebook shows a prompt for any AI tool and one box per answer. In Part B the colour codes and languages are filled in and participants copy in the names; in Part C the names are filled in and they copy in the colour codes. The prompt asks for a fixed format (`#RRGGBB | language | name` in Part B, `language | name | #RRGGBB` in Part C), which makes the answers easy to find in any AI's reply. The names end up in `partB_results.csv` for Part C.
+Everyone uses the same route, with the AI they use day to day. The notebook shows the prompt with **Copy prompt** and buttons for ChatGPT, Claude and Gemini. Each button copies the prompt as it opens the tool. ChatGPT and Claude accept the prompt in the link and open with it typed in; for Gemini, participants paste it (Cmd/Ctrl + V) if it isn't filled in. Any other AI: copy the prompt and paste it there. The sites decide whether to accept a prompt in a link, so check the buttons shortly before the session. Participants then paste the AI's answers into numbered boxes: in Part B one row per test colour (numbered by SDG goal) with a box per language, and in Part C one box per name.
 
-**Gemini built into Colab** (`google.colab.ai`) is offered for demonstration. It needs no key, but Colab limits free use, and once the limit is reached it returns an error. Don't rely on it for the whole room.
+Colab's built-in Gemini was removed from the notebooks: it depends on each person's small free quota, which runs out without warning.
 
 ## Methods and their limits
 

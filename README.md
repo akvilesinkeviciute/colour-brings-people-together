@@ -26,7 +26,7 @@ Part A, the *Colours of Babel* card game, needs no laptop.
 3. Run each cell in order with **Shift + Enter**. You only need to change the grey form fields on the right of some cells.
 4. At the end of Part B, download `partB_results.csv`; Part C starts from it.
 
-For the AI steps, use the AI you use day to day (ChatGPT, Claude, Gemini, Copilot, …). The notebook gives you a prompt to copy into it and one box per answer, with the colour codes or names already filled in, so you only copy in your AI's answers. Colab's built-in Gemini is also available for demonstration, while Colab's free usage allows.
+For the AI steps, use the AI you use day to day. The notebook shows the prompt with **Copy prompt** and buttons for ChatGPT, Claude and Gemini; each button copies the prompt and opens the tool. You then paste the AI's answers into numbered boxes.
 
 ## What's in this repository
 

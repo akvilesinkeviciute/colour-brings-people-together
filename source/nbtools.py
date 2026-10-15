@@ -34,10 +34,10 @@ def make_module(path):
 def loader_cell():
     return code(f"""#@title Run me first: load the masterclass toolkit
 #@markdown The colour maths, the Colour Spinner connection and the charts live in `colour_masterclass.py`, published next to these notebooks.
-TOOLKIT_URL = "{TOOLKIT_URL}"  #@param {{type:"string"}}
+ToolkitURL = "{TOOLKIT_URL}"  #@param {{type:"string"}}
 import os, importlib, urllib.request
 try:                                   # always fetch the current version
-    urllib.request.urlretrieve(TOOLKIT_URL, "colour_masterclass.py")
+    urllib.request.urlretrieve(ToolkitURL, "colour_masterclass.py")
 except Exception as e:
     if not os.path.exists("colour_masterclass.py"):
         raise RuntimeError("Could not download the toolkit. Check your internet connection, or upload "

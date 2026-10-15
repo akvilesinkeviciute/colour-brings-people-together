@@ -223,7 +223,7 @@ class ApiSpinner:
                                   timeout=self.timeout)
             if resp.status_code != 200:
                 raise RuntimeError(f"The Colour Spinner returned {resp.status_code}. Check your internet "
-                                   "connection, or set BACKEND to 'Copied from the browser'.")
+                                   "connection, or set Backend to 'Copied from the browser'.")
             res = parse_color_picker(resp.text)
             # The Namer gives a Latin spelling only for some languages. When the Translator is set to
             # the same language it names the same word, so its Latin spelling can stand in.
@@ -571,9 +571,9 @@ _CSS = f"""
 .cbt .rowlab {{ width:96px; flex:none; color:#fff; font-size:12.5px; text-align:right; padding-right:6px; }}
 .cbt .mini {{ width:40px; height:30px; border-radius:2px; flex:none; }}
 .cbt table.babel {{ border-collapse:separate; border-spacing:0 6px; font-size:13.5px; }}
-.cbt table.babel td, .cbt table.babel th {{ padding:4px 12px 4px 0; vertical-align:middle; text-align:left; }}
-.cbt table.babel th {{ font-weight:400; color:{MUTED}; font-size:12px; }}
-.cbt .bar {{ height:5px; background:#E4E4E0; border-radius:3px; width:90px; margin-top:3px; }}
+.cbt table.babel td, .cbt table.babel th {{ padding:5px 16px 5px 0; vertical-align:middle; text-align:left; }}
+.cbt table.babel th {{ font-weight:400; color:{MUTED}; font-size:12px; padding-bottom:8px; }}
+.cbt .bar {{ height:5px; background:#E4E4E0; border-radius:3px; width:90px; margin:4px 0 3px; }}
 .cbt .bar > i {{ display:block; height:100%; border-radius:3px; background:{INK}; }}
 .cbt .pair {{ display:flex; border-radius:4px; overflow:hidden; width:150px; height:54px; border:5px solid {SURROUND}; }}
 .cbt .pair > div {{ flex:1; display:flex; align-items:flex-end; padding:3px 5px; font-size:10.5px; }}
@@ -591,6 +591,36 @@ def _ink_on(hex_):
     return INK if (Y + 0.05) / 0.05 > 1.05 / (Y + 0.05) else "#FFFFFF"
 
 def _h(x): return _html.escape(str(x))
+
+def framed(hex_, label="", width=96, height=54, size=15):
+    """The framed test-colour swatch used in every table: grey frame, colour, label bottom-left."""
+    return (f'<div class="pair" style="width:{width}px;height:{height}px"><div style="background:{hex_};'
+            f'color:{_ink_on(hex_)};font-weight:700;font-size:{size}px">{_h(label)}</div></div>')
+
+def swatch(hex_, width=40, height=26, title=""):
+    """A plain swatch with a thin grey frame, for colours inside table cells."""
+    return (f'<span title="{_h(title or hex_)}" style="display:inline-block;width:{width}px;height:{height}px;'
+            f'vertical-align:middle;border-radius:3px;background:{hex_};box-shadow:0 0 0 3px {SURROUND}"></span>')
+
+def bar(frac, colour=None, width=90):
+    """A thin horizontal bar, as in the names table. frac in 0–1."""
+    w = int(round(100 * max(0.0, min(1.0, 0 if pd.isna(frac) else frac))))
+    return (f'<div class="bar" style="width:{width}px"><i style="width:{w}%;'
+            f'{"background:" + colour if colour else ""}"></i></div>')
+
+def small(text, colour=None):
+    return f'<span style="color:{colour or MUTED};font-size:11.5px">{text}</span>'
+
+def table(head, rows, note=None, valign="middle"):
+    """A table in the house style: muted headers, airy rows, no borders."""
+    h = "".join(f"<th>{c}</th>" for c in head)
+    v = f' style="vertical-align:{valign}"'
+    b = "".join("<tr>" + "".join(f"<td{v}>{c}</td>" for c in r) + "</tr>" for r in rows)
+    show(f'<table class="babel"><tr>{h}</tr>{b}</table>' + (f'<div class="note">{note}</div>' if note else ""))
+
+def pill(text, kind="neutral"):
+    bg, fg = {"good": _GOOD, "mid": _MID, "bad": _BAD}.get(kind, ("#ECECE8", INK))
+    return f'<span class="badge" style="background:{bg};color:{fg}">{text}</span>'
 
 def show(html_body):
     display(HTML(_CSS + f'<div class="cbt">{html_body}</div>'))
@@ -652,22 +682,26 @@ def de_badge(d, threshold, small_is_good=True):
         bg, fg = _BAD if d < threshold / 2 else _MID if d < threshold else _GOOD
     return f'<span class="badge" style="background:{bg};color:{fg}">{d:.1f}</span>'
 
-def show_pairs(df, left="ai_hex", right="spinner_hex", lab_left="AI", lab_right="Spinner",
+def show_pairs(df, left="ai_hex", right="spinner_hex", lab_left="AI", lab_right="Speakers",
                threshold=10, extra_cols=()):
-    head = ("<tr><th>Language</th><th>Name</th><th>" + f"{lab_left} | {lab_right}" +
-            "</th><th>ΔE00</th>" + "".join(f"<th>{_h(c)}</th>" for c in extra_cols) + "</tr>")
-    body = ""
+    """For each name: the AI's colour, the speakers' best example, and the ΔE00 between them as a bar."""
+    top = max(2 * threshold, float(np.nanmax(df["de00"])) if df["de00"].notna().any() else 1)
+    rows, last = [], None
     for _, r in df.iterrows():
-        def half(h, t):
-            return (f'<div style="background:{h};color:{_ink_on(h)}">{t}<br>{h}</div>'
-                    if isinstance(h, str) else f'<div style="background:#E4E4E0">{t}<br>missing</div>')
-        body += (f"<tr><td>{_h(r.language)}</td><td><b>{_h(r['name'])}</b></td>"
-                 f'<td><div class="pair">{half(r[left], lab_left)}{half(r[right], lab_right)}</div></td>'
-                 f"<td>{de_badge(r.get('de00'), threshold)}</td>" +
-                 "".join(f"<td>{_h(r.get(c, ''))}</td>" for c in extra_cols) + "</tr>")
-    show(f'<table class="babel">{head}{body}</table>'
-         f'<div class="note">ΔE00 ≈ 1 is a just-noticeable difference side by side. '
-         f'Above {threshold:g} the two read as different colours.</div>')
+        lang = f"<b>{_h(r.language)}</b>" if r.language != last else ""
+        last = r.language
+        a = swatch(r[left]) if isinstance(r[left], str) else small("missing")
+        b = swatch(r[right]) if isinstance(r[right], str) else small("missing")
+        d = r.get("de00")
+        if pd.isna(d):
+            dist = small("n/a")
+        else:
+            col = "#B4342D" if d > threshold else ("#C9A227" if d > threshold / 2 else "#3E8E5E")
+            dist = f'<b>{d:.1f}</b>{bar(d / top, col, 160)}'
+        rows.append([lang, f"<b>{_h(r['name'])}</b>", a, b, dist])
+    table(["Language", "Name", lab_left, lab_right, "ΔE00 between them"], rows,
+          f"ΔE00 ≈ 1 is just noticeable side by side; above {threshold:g} (red) the two read as different "
+          "colours and the AI's colour will be replaced.")
 
 # ── matplotlib house style ───────────────────────────────────────────────
 def _install_font():
@@ -691,6 +725,8 @@ mpl.rcParams.update({
     "xtick.color": MUTED, "ytick.color": MUTED, "axes.spines.top": False,
     "axes.spines.right": False, "axes.titleweight": "bold", "axes.titlesize": 13,
     "axes.titlelocation": "left", "font.size": 11, "figure.dpi": 110,
+    "axes.grid": False, "axes.linewidth": 0.8, "xtick.major.size": 3, "ytick.major.size": 3,
+    "legend.frameon": False, "legend.fontsize": 10,
 })
 
 # Red below the threshold (shown at the middle of the scale), calm neutrals above it.
