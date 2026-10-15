@@ -28,7 +28,7 @@ Upload the `partB_results.csv` you downloaded at the end of Part B. If you lost 
 code("""#@title Where your names come from
 NAMES_FROM = "Upload partB_results.csv"  #@param ["Upload partB_results.csv", "Type them in"]
 BACKEND = "Colour Spinner API"  #@param ["Colour Spinner API", "Copied from the browser"]
-#@markdown *Copied from the browser* only matters if you type names in: then add each name's best example to `SHEET` below."""),
+#@markdown *Copied from the browser* only matters if you type names in: then also type each name's best example (the Mapper's top-left tile) into the boxes below."""),
 
 code("""TYPED_NAMES = \"\"\"
 language, name
@@ -392,3 +392,18 @@ def _find(pred):
 cells[_find(lambda s, t: t == "code" and s.startswith("#@title Which AI?"))] = code('#@title Which AI?\nAI_PROVIDER = "Paste answers from my own AI"  #@param ["Paste answers from my own AI", "Gemini built into Colab"]\n#@markdown **Your own AI** (ChatGPT, Claude, Gemini, Copilot, …): the next cell shows a prompt to copy into it and one box per name. The names are filled in for you; just copy in the colour code (#RRGGBB) your AI gives for each.\n#@markdown **Gemini built into Colab** is for demonstration. It needs no set-up but stops working once Colab\'s free usage limit is reached.')
 cells[_find(lambda s, t: t == "code" and "PROMPT_C = f" in s)] = code('lines = "\\n".join(f"{r.language} | {plain_with_roman(r)}" for _, r in names.iterrows())\nfirst = names.iloc[0]\nPROMPT_C = f"""You are helping with a cross-cultural colour naming study.\nFor each colour name below, give the sRGB colour, as a hex code, that native speakers of that language\nwould consider the best example of the name: its most typical instance.\n\n{lines}\n\nReply with exactly one line for each, in this format and nothing else:\n{first.language} | {first[\'name\']} | #RRGGBB"""\nshow_prompt(PROMPT_C, AI_PROVIDER, rows=names, kind="colour")')
 cells[_find(lambda s, t: t == "code" and "PROMPT_C, AI_PROVIDER" in s and "show_ai_palette" in s)] = code('if AI_PROVIDER == PASTE:\n    pal = read_ai_colours(collected_answers(), names)    # the colour codes typed into the boxes\nelse:\n    pal = read_ai_colours(ask_ai(PROMPT_C, AI_PROVIDER), names)\nshow_ai_palette(pal)')
+
+
+# ── boxes instead of code for typed names ──
+cells[_find(lambda s, t: t == "code" and s.startswith('TYPED_NAMES = """'))] = code("""#@title Only if you chose "Type them in"
+if NAMES_FROM == "Type them in":
+    name_boxes()      # choose a language, type a name; add its best example only for "Copied from the browser"
+else:
+    show("You're loading names from Part B, so there's nothing to fill in here.")""", hidden=False)
+for _k, _c in enumerate(cells):
+    if _c["cell_type"] == "code":
+        _src = "".join(_c["source"])
+        if "connect(BACKEND, SHEET)" in _src or "load_names(NAMES_FROM, TYPED_NAMES)" in _src:
+            cells[_k] = code(_src.replace("connect(BACKEND, SHEET)", "connect(BACKEND)")
+                                 .replace("load_names(NAMES_FROM, TYPED_NAMES)", "load_names(NAMES_FROM)"),
+                             hidden=_c["metadata"].get("cellView") == "form")

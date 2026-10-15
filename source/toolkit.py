@@ -394,6 +394,8 @@ def _read_sheet(text):
 def parse_colour(s):
     """'#E8153A', 'E8153A' or '232 21 56' (as the Mapper shows RGB) -> '#E8153A'."""
     s = str(s).strip()
+    if not s:
+        return ""
     nums = re.findall(r"\d+", s)
     if len(nums) == 3 and not re.fullmatch(r"#?[0-9A-Fa-f]{6}", s):
         return rgb_to_hex([int(n) for n in nums])
@@ -669,15 +671,18 @@ mpl.rcParams.update({
 RISK_CMAP = mpl.colors.LinearSegmentedColormap.from_list(
     "risk", [(0, "#8E1B1B"), (0.4999, "#E7B3A3"), (0.5, "#E3E8DF"), (1, PAPER)])
 
-def chip(ax, y, hex_, label, height=0.72, gap_in=0.12, width_in=0.66):
+def chip(ax, y, hex_, label, height=0.72, gap_in=0.12, width_in=0.66, radius_in=0.07):
     """A rounded colour chip with its label, drawn just left of the plot area at data height y.
     The same chip is used on every chart, so test colours look the same everywhere."""
     fig = ax.figure
-    ax_w_in = ax.get_position().width * fig.get_figwidth()
+    pos = ax.get_position()
+    ax_w_in, ax_h_in = pos.width * fig.get_figwidth(), pos.height * fig.get_figheight()
+    y_per_in = abs(np.diff(ax.get_ylim())[0]) / ax_h_in
     w, g = width_in / ax_w_in, gap_in / ax_w_in
     blend = mpl.transforms.blended_transform_factory(ax.transAxes, ax.transData)
     ax.add_patch(mpl.patches.FancyBboxPatch((-g - w, y - height / 2), w, height,
-                 boxstyle="round,pad=0,rounding_size=0.012", color=hex_, transform=blend, clip_on=False))
+                 boxstyle=f"round,pad=0,rounding_size={radius_in / ax_w_in}",
+                 mutation_aspect=y_per_in * ax_w_in, color=hex_, transform=blend, clip_on=False))
     ax.text(-g - w / 2, y, label, transform=blend, ha="center", va="center", color=_ink_on(hex_),
             fontsize=10, fontweight="bold", clip_on=False)
 

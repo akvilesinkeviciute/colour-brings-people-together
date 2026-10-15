@@ -34,7 +34,7 @@ md("""## 2 · Choose your subset and languages
 
 Pick **three to five** SDG colours. Good audits mix an easy colour with a hard one: try one of the reds (1, 4, 5, 8), one of the blues (6, 14, 16, 17) and something in between such as 12.
 
-Choose a **source language**, then tick the **target languages** to compare it with. The Colour Spinner currently covers six. If either of you speaks one of them natively, include it, and include **OtjiHimba**, spoken by the Himba of northern Namibia, which has just seven indispensable colour terms: *serandu*, for example, covers what English splits into red, pink and orange.
+Tick the **languages** to audit, two or more. The Colour Spinner currently covers six. You'll choose which language to translate *from* later, in the translatability step. If either of you speaks one of them natively, include it, and include **OtjiHimba**, spoken by the Himba of northern Namibia, which has just seven indispensable colour terms: *serandu*, for example, covers what English splits into red, pink and orange.
 
 **Backend.** *Colour Spinner API* fetches everything for you. If the network is slow, choose *Copied from the browser* and fill in the sheet in section 4."""),
 
@@ -126,7 +126,7 @@ Two measures come out of this step:
 - **Nameability**: the Namer's *confidence*, the probability of its top-ranked name in the model's naming distribution for that colour. High confidence marks the centre of a category, where speakers agree; low confidence marks a contested boundary between categories.
 - **Translatability**: whether each language's name points to the same colour. The Mapper's *best example* of each name, its **focal colour** (the top-left tile), shows where that name is centred; if the focal colours drift apart across languages, a "translation" of the colour lands somewhere else.
 
-**Only if you chose *Copied from the browser*:** fill in the sheet below, one row per colour and language. In the Spinner, type the hex into the Picker, set the Namer to the language, and copy the name, its confidence and the RGB of the Mapper's best example (the focal colour). Otherwise skip this cell."""),
+**Only if you chose *Copied from the browser*:** the next cell shows a row of boxes for each test colour and language. In the Spinner, type the colour's hex code into the Picker and set the language. Then copy the Namer's name and confidence, and the RGB of the Mapper's best example (its top-left tile), into the boxes. Otherwise skip it."""),
 
 code("""SHEET = \"\"\"
 hex, language, name, confidence, best_example
@@ -194,7 +194,9 @@ plt.tight_layout(); plt.show()"""),
 
 md("""### Translatability
 
-The left swatch is the test colour. Each swatch to its right is the **best example** of the name that language uses for it, with its distance from the test colour. When those swatches differ from each other, the "same" colour word does not mean the same colour in each language."""),
+Translation is where a source and a target language come in. Choose the **source language** in the form below; every other language you ticked becomes a **target language**.
+
+For each test colour, the first column shows the source language's name for it and that name's **best example** (focal colour), with its ΔE00 from the test colour. Each target column shows the target language's name for the same colour and its focal colour, with its ΔE00 from the **source's** focal colour. A small distance means the names translate: they point to the same colour. A large one means a translation would land on a different colour."""),
 
 code("""rows = ""
 for i in PICK:
@@ -434,3 +436,18 @@ cells[_find(lambda s, t: t == "code" and s.startswith("#@title Which AI?"))] = c
 cells[_find(lambda s, t: t == "code" and "PROMPT_B = f" in s)] = code('lines = "\\n".join(f"{r.hex} | {r.language}" for _, r in naming.iterrows())\nhimba = "\\n(OtjiHimba is spoken by the Himba of northern Namibia.)" if "OtjiHimba" in LANGUAGES else ""\nPROMPT_B = f"""You are helping with a cross-cultural colour naming study.\nFor each colour code and language below, give the single colour name that most native speakers of that\nlanguage would use for it. Write each name in that language and in its usual script; for a non-Latin\nscript, add the Latin spelling in brackets.{himba}\n\n{lines}\n\nReply with exactly one line for each, in this format and nothing else:\n#E5243B | {LANGUAGES[-1]} | name"""\nshow_prompt(PROMPT_B, AI_PROVIDER, rows=naming[["hex", "language"]], kind="name")')
 cells[_find(lambda s, t: t == "code" and "PROMPT_B, AI_PROVIDER" in s and "comparison" in s)] = code('if AI_PROVIDER == PASTE:\n    ai_names = collected_answers()                        # the names typed into the boxes\nelse:\n    ai_names = read_ai_names(ask_ai(PROMPT_B, AI_PROVIDER))\nai_names["language"] = ai_names["language"].map(canonical_language)\n\ncomparison = naming.merge(ai_names, on=["hex", "language"], how="left")\ncomparison["agrees"] = [same_name(ai, name, rom)    # any script; ignores case and accents\n                        for ai, name, rom in zip(comparison.ai_name, comparison.name, comparison.romanized)]\ncomparison = where_ai_names_point(comparison, spinner)   # Mapper: where each differing AI name is centred\nshow_name_comparison(comparison, CONFUSABLE_BELOW_DELTA_E)\nplot_agreement_by_language(comparison, LANGUAGES)')
 cells[_find(lambda s, t: t == "code" and "card = scorecard" in s or "score = scorecard" in s)] = code('#@title Scorecard { run: "auto" }\nSCORE_LANGUAGE = "Average of my languages"  #@param ["Average of my languages", "American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]\nSCORE_CONDITION = "Typical"  #@param ["Typical", "Protanopia", "Deuteranopia", "Tritanopia", "Age 40", "Age 60", "Age 80", "Worst case of all conditions"]\nNORMALISE_BY = "Largest value in my subset"  #@param ["Largest value in my subset", "Range across all 17 SDG colours"]\nHARD_TO_NAME_BELOW_CONFIDENCE = 0.5  #@param {type:"slider", min:0.2, max:0.9, step:0.05}\n#@markdown **SCORE_LANGUAGE**: whose naming confidence to plot. **SCORE_CONDITION**: whose vision the perceptual distance is for (*Typical* = typical colour vision).\n#@markdown A colour whose top name has a Spinner confidence below **HARD_TO_NAME_BELOW_CONFIDENCE** counts as hard to name.\n\ncard = scorecard(PICK, naming, SCORE_LANGUAGE, SCORE_CONDITION, NORMALISE_BY)\nplot_two_axes(card, CONFUSABLE_BELOW_DELTA_E, HARD_TO_NAME_BELOW_CONFIDENCE)\nshow_scorecard(card)', hidden=False)
+
+
+# ── languages chosen once; source language only where translating ──
+cells[_find(lambda s, t: t == "code" and s.startswith("#@title Your pair's choices"))] = code('#@title Your pair\'s choices { run: "auto" }\nSUBSET = "1, 6, 12, 14"  #@param {type:"string"}\n#@markdown **Languages to audit** (tick two or more):\nAmerican_English = False  #@param {type:"boolean"}\nBritish_English = True  #@param {type:"boolean"}\nFrench = False  #@param {type:"boolean"}\nGreek = True  #@param {type:"boolean"}\nOtjiHimba = True  #@param {type:"boolean"}\nSpanish = True  #@param {type:"boolean"}\nBACKEND = "Colour Spinner API"  #@param ["Colour Spinner API", "Copied from the browser"]\n\nticked = {"American English": American_English, "British English": British_English,\n          "French": French, "Greek": Greek, "OtjiHimba": OtjiHimba, "Spanish": Spanish}\nLANGUAGES = [language for language, on in ticked.items() if on]\nPICK = parse_subset(SUBSET)\nshow_subset(PICK, LANGUAGES)')
+cells[_find(lambda s, t: t == "code" and s.strip().startswith("show_translatability("))] = code('#@title Translatability { run: "auto" }\nSOURCE_LANGUAGE = "British English"  #@param ["American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]\n#@markdown The language to translate **from**. Every other language you ticked is a **target language**.\n\nshow_translatability(naming, PICK, LANGUAGES, CONFUSABLE_BELOW_DELTA_E, source=SOURCE_LANGUAGE)', hidden=False)
+
+
+# ── boxes instead of code for values copied from the browser ──
+cells[_find(lambda s, t: t == "code" and s.startswith('SHEET = """'))] = code("""#@title Only if BACKEND is "Copied from the browser"
+if BACKEND == "Copied from the browser":
+    sheet_boxes(PICK, LANGUAGES)      # one row of boxes per test colour and language
+else:
+    show("You're using the Colour Spinner directly, so there's nothing to fill in here.")""", hidden=False)
+_k = _find(lambda s, t: t == "code" and s.startswith("spinner = connect(BACKEND, SHEET)"))
+cells[_k] = code("".join(cells[_k]["source"]).replace("connect(BACKEND, SHEET)", "connect(BACKEND)"))

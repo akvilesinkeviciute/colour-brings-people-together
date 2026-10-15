@@ -45,20 +45,64 @@ def nearest_neighbours(pick, conditions=CONDITIONS):
     nn = pd.DataFrame({c: {i: nearest(i, c) for i in pick} for c in conditions})
     return nn.map(lambda t: t[0]), nn.map(lambda t: t[1])
 
+def _risk_colour(v, threshold):
+    """Below the threshold: from deep red (0) to light red (at the threshold). Above: light grey."""
+    if np.isnan(v):
+        return "#FFFFFF"
+    if v >= threshold:
+        return "#F2F2F0"
+    t = max(v, 0) / threshold
+    lo, hi = np.array(mpl.colors.to_rgb("#8E1B1B")), np.array(mpl.colors.to_rgb("#EDB9AC"))
+    return mpl.colors.to_hex(lo + (hi - lo) * t)
+
+def _cell_grid(values, threshold, row_labels, title, subtitle, row_chip_colours=None, neighbours=None):
+    """A grid of rounded cells: one row per test colour (or palette), one column per viewing condition."""
+    nr, nc = values.shape
+    cols = list(values.columns)
+    W, H = 1.3 * nc + (1.3 if row_chip_colours else 2.4), 0.8 * nr + 1.6
+    fig, ax = plt.subplots(figsize=(W, H))
+    for r in range(nr):
+        for c in range(nc):
+            v = values.iat[r, c]
+            ax.add_patch(mpl.patches.FancyBboxPatch((c - 0.45, r - 0.40), 0.90, 0.80,
+                         boxstyle="round,pad=0,rounding_size=0.07", fc=_risk_colour(v, threshold), ec="none"))
+            if np.isnan(v):
+                continue
+            ink = "white" if v < 0.6 * threshold else INK
+            ax.text(c, r - (0.09 if neighbours is not None else 0), f"{v:.1f}", ha="center", va="center",
+                    fontsize=12, fontweight="bold", color=ink)
+            if neighbours is not None:
+                n = neighbours.iat[r, c]
+                ax.add_patch(mpl.patches.Rectangle((c - 0.30, r + 0.13), 0.13, 0.15, fc=SDG.hex[n], ec="white", lw=0.8))
+                ax.text(c - 0.12, r + 0.205, f"vs SDG {n}", ha="left", va="center", fontsize=8.5, color=ink)
+    for c, name in enumerate(cols):
+        ax.text(c, -0.68, condition_label(name), ha="center", va="center", fontsize=10, color=INK)
+    ax.set_xlim(-0.5, nc - 0.5); ax.set_ylim(nr - 0.5, -0.95)
+    ax.set_xticks([])
+    if row_chip_colours:
+        ax.set_yticks([])
+    else:
+        ax.set_yticks(range(nr), row_labels, fontsize=10); ax.tick_params(axis="y", length=0, colors=INK)
+    for sp in ax.spines.values(): sp.set_visible(False)
+    ax.set_title(title, pad=24)
+    ax.annotate(subtitle, xy=(0, 1), xycoords="axes fraction", xytext=(0, 6), textcoords="offset points",
+                ha="left", va="bottom", fontsize=9.5, color=MUTED)
+    fig.tight_layout()
+    if row_chip_colours:
+        fig.subplots_adjust(left=max(fig.subplotpars.left, 1.0 / W))
+        for r, (h, l) in enumerate(zip(row_chip_colours, row_labels)):
+            chip(ax, r, h, l, height=0.80)
+    plt.show()
+
 def plot_nearest_neighbours(nn_de, nn_id, threshold):
     if nn_de is None: return
-    pick, conds = list(nn_de.index), list(nn_de.columns)
-    fig, ax = plt.subplots(figsize=(1.1 * len(conds) + 1.6, 0.62 * len(pick) + 1.4))
-    ax.imshow(nn_de.values, cmap=RISK_CMAP, vmin=0, vmax=2 * threshold, aspect="auto")
-    for (r, c), v in np.ndenumerate(nn_de.values):
-        ink = "white" if v < threshold * 0.6 else INK
-        ax.text(c, r - 0.08, f"{v:.1f}", ha="center", va="center", fontsize=11, fontweight="bold", color=ink)
-        ax.text(c, r + 0.27, f"vs {nn_id.values[r, c]}", ha="center", va="center", fontsize=8, color=ink)
-    ax.set_xticks(range(len(conds)), [condition_label(c) for c in conds], rotation=30, ha="right")
-    row_chips(ax, [SDG.hex[i] for i in pick], [f"SDG {i}" for i in pick])
-    ax.tick_params(axis="x", length=0); _hide_spines(ax)
-    ax.set_title(f"Test colour to nearest other SDG colour (ΔE00); red below {threshold}")
-    plt.tight_layout(); plt.show()
+    pick = list(nn_de.index)
+    below = int((nn_de.values < threshold).sum())
+    _cell_grid(nn_de, threshold, [f"SDG {i}" for i in pick],
+               "How close is each test colour to its nearest SDG neighbour?",
+               f"ΔE00 to the nearest other SDG colour under each condition. Red: closer than {threshold}, "
+               f"so easily confused ({below} of {nn_de.size} cells).",
+               row_chip_colours=[SDG.hex[i] for i in pick], neighbours=nn_id)
 
 @needs_simulations()
 def show_at_risk(nn_de, nn_id, threshold):
@@ -84,9 +128,74 @@ def show_at_risk(nn_de, nn_id, threshold):
 
 
 # ── Part B: cognitive axis ────────────────────────────────────────────────
-def connect(backend, sheet=""):
-    """The Colour Spinner itself, or the values you copied from it into SHEET."""
-    return ApiSpinner() if backend == "Colour Spinner API" else SheetSpinner(sheet)
+def connect(backend, sheet=None):
+    """The Colour Spinner itself, or the values you copied from it into the boxes."""
+    if backend == "Colour Spinner API":
+        return ApiSpinner()
+    return SheetSpinner(sheet if sheet is not None else boxes_as_sheet())
+
+# ── Boxes for values copied from the Colour Spinner in the browser ────────
+_SHEET = {"rows": [], "names": []}
+
+def _w():
+    import ipywidgets as w
+    return w
+
+def _swatch_html(hex_, text):
+    return (f'<span style="display:inline-block;width:34px;height:22px;border-radius:3px;vertical-align:middle;'
+            f'background:{hex_}"></span>&nbsp; {text}')
+
+def sheet_boxes(pick, languages):
+    """One row of boxes per test colour and language, for what the Spinner shows in the browser."""
+    w = _w()
+    lay = lambda px: w.Layout(width=f"{px}px")
+    head = w.HBox([w.HTML("<b>Test colour · language</b>", layout=lay(300)), w.HTML("<b>Namer: name</b>", layout=lay(190)),
+                   w.HTML("<b>Confidence %</b>", layout=lay(110)), w.HTML("<b>Mapper: best example RGB</b>", layout=lay(220))])
+    items, rows = [head], []
+    for i in pick:
+        for lang in languages:
+            name = w.Text(placeholder="e.g. Red", layout=lay(180))
+            conf = w.Text(placeholder="e.g. 36", layout=lay(100))
+            best = w.Text(placeholder="e.g. 232 21 56", layout=lay(200))
+            rows.append((SDG.hex[i], lang, name, conf, best))
+            items.append(w.HBox([w.HTML(_swatch_html(SDG.hex[i], f"<b>SDG {i}</b> {SDG.hex[i]} · {_h(lang)}"), layout=lay(300)),
+                                 name, conf, best]))
+    _SHEET["rows"] = rows
+    display(w.VBox(items))
+
+def name_boxes(n=8):
+    """Boxes to type colour names in, with an optional best example for each."""
+    w = _w()
+    lay = lambda px: w.Layout(width=f"{px}px")
+    head = w.HBox([w.HTML("<b>Language</b>", layout=lay(190)), w.HTML("<b>Colour name</b>", layout=lay(200)),
+                   w.HTML("<b>Best example RGB</b> (only for <i>Copied from the browser</i>)", layout=lay(330))])
+    items, rows = [head], []
+    for _ in range(n):
+        lang = w.Dropdown(options=SPINNER_LANGUAGES, layout=lay(180))
+        name = w.Text(placeholder="e.g. Red", layout=lay(190))
+        best = w.Text(placeholder="e.g. 232 21 56", layout=lay(200))
+        rows.append((lang, name, best))
+        items.append(w.HBox([lang, name, best]))
+    _SHEET["names"] = rows
+    display(w.VBox(items))
+
+def boxes_as_sheet():
+    """Everything typed into the boxes, in the table form SheetSpinner reads."""
+    lines = ["hex, language, name, confidence, best_example"]
+    for hex_, lang, name, conf, best in _SHEET["rows"]:
+        if name.value.strip():
+            lines.append(f"{hex_.lstrip('#')}, {lang}, {name.value.strip()}, "     # no '#': that marks a comment
+                         f"{conf.value.strip().rstrip('%') or 0}, {best.value.strip()}")
+    for lang, name, best in _SHEET["names"]:
+        if name.value.strip() and best.value.strip():
+            lines.append(f", {lang.value}, {name.value.strip()}, 0, {best.value.strip()}")
+    return "\n".join(lines) if len(lines) > 1 else ""
+
+def typed_names():
+    t = [(lang.value, name.value.strip()) for lang, name, _ in _SHEET["names"] if name.value.strip()]
+    if not t:
+        raise ValueError("Type at least one colour name into the boxes above, then run this cell again.")
+    return pd.DataFrame(t, columns=["language", "name"])
 
 def report_problems(problems):
     if problems:
@@ -128,29 +237,48 @@ def plot_nameability(naming, pick, languages):
     ax.set_title("Nameability: how confident is the Spinner's top name?")
     plt.tight_layout(); fig.subplots_adjust(left=0.30); plt.show()
 
-def show_translatability(naming, pick, languages, threshold):
+def show_translatability(naming, pick, languages, threshold, source=None):
+    """Source language first: its focal colour vs the test colour. Then each target language:
+    its focal colour vs the source's focal colour."""
+    if source is not None and source not in languages:
+        show(f"<b>{esc(source)}</b> isn't one of the languages you ticked in section 2. "
+             "Tick it there, or choose another source language.")
+        return
+    order = ([source] + [l for l in languages if l != source]) if source else list(languages)
     td = 'style="width:132px;padding:4px 10px 4px 0"'
     rows = ""
     for i in pick:
         sub = naming[naming.sdg == i]
+        best = {l: sub[sub.language == l].best_example.iloc[0] for l in order
+                if not sub[sub.language == l].empty and isinstance(sub[sub.language == l].best_example.iloc[0], str)}
         cells = ""
-        for lang in languages:
+        for k, lang in enumerate(order):
             r = sub[sub.language == lang]
-            if r.empty or not isinstance(r.best_example.iloc[0], str):
-                cells += f'<td {td}><span style="color:{MUTED}">—</span></td>'; continue
-            b = r.best_example.iloc[0]
-            cells += (f'<td {td}><div class="pair" style="width:118px"><div style="background:{b};color:{ink_on(b)}">'
-                      f'{esc(r.name.iloc[0])}<br>{b}</div></div><div style="margin-top:3px">'
-                      f'{de_badge(r.drift.iloc[0], threshold)}</div></td>')
-        sp = spread(sub.best_example.tolist())
+            if lang not in best:
+                cells += f'<td {td}><span style="color:{MUTED}">—</span></td>'
+            else:
+                b = best[lang]
+                ref = SDG.hex[i] if (k == 0 or not source or source not in best) else best[source]
+                cells += (f'<td {td}><div class="pair" style="width:118px"><div style="background:{b};color:{ink_on(b)}">'
+                          f'{esc(r.name.iloc[0])}<br>{b}</div></div><div style="margin-top:3px">'
+                          f'{de_badge(de00(ref, b), threshold)}</div></td>')
+            if k == 0 and source:
+                cells += '<td style="width:28px"></td>'
+        sp = spread(list(best.values()))
         rows += (f'<tr><td style="width:110px"><div class="pair" style="width:96px"><div style="background:{SDG.hex[i]};'
                  f'color:{ink_on(SDG.hex[i])};font-weight:700;font-size:13px">SDG {i}</div></div></td>'
                  f'<td style="width:36px"></td>{cells}'
                  f'<td style="color:{MUTED};white-space:nowrap">{"" if pd.isna(sp) else "spread " + format(sp, ".1f")}</td></tr>')
-    show('<table class="babel" style="table-layout:fixed"><tr><th>Test colour</th><th></th>' +
-         "".join(f'<th {td}>{esc(l)}</th>' for l in languages) +
-         f'<th></th></tr>{rows}</table><div class="note">Badges: ΔE00 between the test colour and each '
-         "language's best example (focal colour). Spread: the largest ΔE00 between two languages' best examples.</div>")
+    heads = ""
+    for k, l in enumerate(order):
+        tag = " (source)" if (k == 0 and source) else (" (target)" if source else "")
+        heads += f'<th {td}>{esc(l)}{tag}</th>' + ('<th></th>' if (k == 0 and source) else "")
+    note = ("Source column: ΔE00 between the test colour and the source name's best example (focal colour). "
+            "Target columns: ΔE00 between each target name's focal colour and the source's. " if source else
+            "Badges: ΔE00 between the test colour and each language's best example (focal colour). ")
+    show('<table class="babel" style="table-layout:fixed"><tr><th>Test colour</th><th></th>' + heads +
+         f'<th></th></tr>{rows}</table><div class="note">{note}'
+         "Spread: the largest ΔE00 between any two languages' focal colours.</div>")
 
 def plot_name_map(naming, pick, languages):
     fig, ax = plt.subplots(figsize=(7, 7)); _ucs_axes(ax)
@@ -407,8 +535,8 @@ def plot_agreement_by_language(cmp, languages):
 
 
 # ── Part C: names and the AI's colours ────────────────────────────────────
-def load_names(source, typed=""):
-    """Names to test: from partB_results.csv (uploaded in Colab) or typed in."""
+def load_names(source):
+    """Names to test: from partB_results.csv (uploaded in Colab) or typed into the boxes."""
     if source.startswith("Upload"):
         if IN_COLAB:
             from google.colab import files
@@ -420,7 +548,7 @@ def load_names(source, typed=""):
                  [[c for c in ["sdg", "hex", "language", "name", "romanized", "best_example"] if c in partb]]
                  .rename(columns={"hex": "sdg_hex", "best_example": "spinner_hex"}))
     else:
-        names = read_sheet(typed).assign(sdg=np.nan, sdg_hex=None, spinner_hex=None)[
+        names = typed_names().assign(sdg=np.nan, sdg_hex=None, spinner_hex=None)[
             ["sdg", "sdg_hex", "language", "name", "spinner_hex"]]
     names["language"] = names["language"].map(canonical_language)
     return names.reset_index(drop=True)
@@ -586,19 +714,11 @@ def closest_pairs(pal, languages, conditions=CONDITIONS):
 
 def plot_closest_pairs(check, threshold):
     if check is None: return
-    conds = list(check.columns)
-    fig, ax = plt.subplots(figsize=(1.1 * len(conds) + 2.4, 0.5 * len(check) + 1.4))
-    ax.imshow(check.values, cmap=RISK_CMAP, vmin=0, vmax=2 * threshold, aspect="auto")
-    for (r, c), v in np.ndenumerate(check.values):
-        if not np.isnan(v):
-            ax.text(c, r, f"{v:.1f}", ha="center", va="center", fontsize=10,
-                    color="white" if v < 0.6 * threshold else INK)
-    ax.set_xticks(range(len(conds)), [condition_label(c) for c in conds], rotation=30, ha="right")
-    ax.set_yticks(range(len(check)), [f"{l} · {v}" for l, v in check.index])
-    for r in range(2, len(check), 2): ax.axhline(r - 0.5, color="white", lw=3)
-    ax.tick_params(length=0); _hide_spines(ax)
-    ax.set_title("Closest pair in each palette under each condition (ΔE00)")
-    plt.tight_layout(); plt.show()
+    below = int((check.values < threshold).sum())
+    _cell_grid(check, threshold, [f"{l} · {v}" for l, v in check.index],
+               "Can every viewer still tell each palette's colours apart?",
+               f"Smallest ΔE00 between any two colours in the palette. Red: closer than {threshold} "
+               f"({below} of {int(np.isfinite(check.values).sum())} cells).")
 
 @needs_simulations()
 def show_grounded_conditions(pal, languages):

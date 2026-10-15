@@ -25,20 +25,26 @@ def make_module(path):
             'Colour maths (CIEDE2000, CAM16-UCS), the Colour Spinner connection, AI helpers and the\n'
             'charts and tables used in Parts B and C. Imported by the notebooks with\n'
             '`from colour_masterclass import *`.\n"""\n')
-    tail = '\nprint("Toolkit ready ✓  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))\n'
+    import datetime
+    stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    tail = (f'\nTOOLKIT_VERSION = "{stamp}"\n'
+            'print(f"Toolkit ready ✓  version {TOOLKIT_VERSION}  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))\n')
     pathlib.Path(path).write_text(head + base + (HERE / "helpers.py").read_text() + tail)
 
 def loader_cell():
     return code(f"""#@title Run me first: load the masterclass toolkit
 #@markdown The colour maths, the Colour Spinner connection and the charts live in `colour_masterclass.py`, published next to these notebooks.
 TOOLKIT_URL = "{TOOLKIT_URL}"  #@param {{type:"string"}}
-import os, urllib.request
-if not os.path.exists("colour_masterclass.py"):
-    try:
-        urllib.request.urlretrieve(TOOLKIT_URL, "colour_masterclass.py")
-    except Exception as e:
+import os, importlib, urllib.request
+try:                                   # always fetch the current version
+    urllib.request.urlretrieve(TOOLKIT_URL, "colour_masterclass.py")
+except Exception as e:
+    if not os.path.exists("colour_masterclass.py"):
         raise RuntimeError("Could not download the toolkit. Check your internet connection, or upload "
                            "colour_masterclass.py in Colab's Files panel (folder icon, left).") from e
+    print("Couldn't refresh the toolkit, so using the copy already here.")
+import colour_masterclass
+importlib.reload(colour_masterclass)
 from colour_masterclass import *""", hidden=False)
 
 def toolkit_cell():
