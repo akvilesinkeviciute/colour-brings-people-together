@@ -32,7 +32,7 @@ BACKEND = "Colour Spinner API"  #@param ["Colour Spinner API", "Copied from the 
 
 code("""TYPED_NAMES = \"\"\"
 language, name
-# British English, Teal          ← one row per name, only if you chose "Type them in"
+# American English, Red          ← one row per name, only if you chose "Type them in"
 \"\"\"
 
 SHEET = \"\"\"

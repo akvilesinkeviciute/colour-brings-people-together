@@ -121,7 +121,7 @@ Two measures come out of this step:
 
 code("""SHEET = \"\"\"
 hex, language, name, confidence, best_example
-# E5243B, Greek, Κόκκινο, 53%, 232 21 56      ← one row like this per colour and language
+# C34F4F, American English, Red, 20%, 232 21 56      ← example row, as the Spinner shows #C34F4F
 \"\"\"
 """),
 
