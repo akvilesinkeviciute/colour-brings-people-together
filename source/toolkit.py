@@ -467,7 +467,7 @@ def try_call(fn, *a, **k):
 # ════════════════════════════════════════════════════════════════════════
 #  4. Asking an AI system
 # ════════════════════════════════════════════════════════════════════════
-COLAB_AI = "Gemini built into Colab (no key needed)"
+COLAB_AI = "Gemini built into Colab"
 
 def ask_ai(prompt, provider=COLAB_AI, model="", base_url=""):
     """Send `prompt` to an AI system.
@@ -528,7 +528,7 @@ def parse_json_reply(text):
 #  for judging colour: a white or black page shifts how a colour looks.
 #  Atkinson Hyperlegible was designed by the Braille Institute for low-vision
 #  readers.
-SURROUND, INK, MUTED, PAPER = "#777777", "#1F1F1F", "#5E5E5E", "#FAFAF8"
+SURROUND, INK, MUTED, PAPER = "#777777", "#1F1F1F", "#5E5E5E", "#FFFFFF"
 
 _CSS = f"""
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
@@ -669,16 +669,24 @@ mpl.rcParams.update({
 RISK_CMAP = mpl.colors.LinearSegmentedColormap.from_list(
     "risk", [(0, "#8E1B1B"), (0.4999, "#E7B3A3"), (0.5, "#E3E8DF"), (1, PAPER)])
 
+def chip(ax, y, hex_, label, height=0.72, gap_in=0.12, width_in=0.66):
+    """A rounded colour chip with its label, drawn just left of the plot area at data height y.
+    The same chip is used on every chart, so test colours look the same everywhere."""
+    fig = ax.figure
+    ax_w_in = ax.get_position().width * fig.get_figwidth()
+    w, g = width_in / ax_w_in, gap_in / ax_w_in
+    blend = mpl.transforms.blended_transform_factory(ax.transAxes, ax.transData)
+    ax.add_patch(mpl.patches.FancyBboxPatch((-g - w, y - height / 2), w, height,
+                 boxstyle="round,pad=0,rounding_size=0.012", color=hex_, transform=blend, clip_on=False))
+    ax.text(-g - w / 2, y, label, transform=blend, ha="center", va="center", color=_ink_on(hex_),
+            fontsize=10, fontweight="bold", clip_on=False)
+
 def row_chips(ax, hexes, labels):
     """Replace y tick labels with colour chips carrying the label."""
     ax.set_yticks(range(len(hexes)), [""] * len(hexes))
     ax.tick_params(axis="y", length=0, pad=0)
     for r, (h, l) in enumerate(zip(hexes, labels)):
-        ax.add_patch(mpl.patches.FancyBboxPatch((-1.12, r - 0.36), 0.56, 0.72, boxstyle="round,pad=0,rounding_size=0.06",
-                     color=h, clip_on=False, transform=ax.transData))
-        ax.text(-0.84, r, l, ha="center", va="center", color=_ink_on(h), fontsize=10,
-                fontweight="bold", clip_on=False)
-    ax.set_xlim(-1.2, ax.get_xlim()[1])
+        chip(ax, r, h, l)
 
 def download(path):
     """Offer a file for download in Colab; elsewhere just report where it is."""

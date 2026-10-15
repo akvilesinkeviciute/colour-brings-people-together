@@ -64,7 +64,7 @@ show('<table class="babel"><tr><th>Language</th><th>Names to test</th></tr>' + "
 
 md("""## 2 · Ask the AI system for the best example of each name
 
-The prompt asks for the colour that a native speaker would consider the **best example** of each name: the most typical instance, not the average and not a brand colour. As in Part B, Colab's built-in Gemini is used for demonstration, and you can use any AI you use regularly instead: choose *Paste the reply from my own AI* in the form below, and the next cell gives you the prompt and a box to paste the reply into. Use the same AI system as in Part B so the two parts can be compared."""),
+The prompt asks for the colour that a native speaker would consider the **best example** of each name: the most typical instance, not the average and not a brand colour. As in Part B, use the AI you use day to day: keep *Paste answers from my own AI* in the form below. The next cell gives you the prompt and one box per name, with the names already filled in: you only copy in the colour codes. Use the same AI system as in Part B so the two parts can be compared."""),
 
 code("""items = "\\n".join(f"- {r.language}: {plain_with_roman(r)}" for _, r in names.iterrows())
 PROMPT_C = f\"\"\"You are helping with a cross-cultural colour naming study.
@@ -198,7 +198,9 @@ show(f'<div class="note">{int(pal.replaced.sum())} of {int(pal.grounded_hex.notn
 
 md("""### Does the grounded palette still work for every viewer?
 
-Grounding fixes the cognitive axis, but best examples of neighbouring names can sit close together. Check the perceptual axis again: for each language's palette, the smallest ΔE00 between any two of its colours under each viewing condition."""),
+Grounding fixes the cognitive axis, but best examples of neighbouring names can sit close together. Check the perceptual axis again: for each language's palette, the smallest ΔE00 between any two of its colours under each viewing condition.
+
+**A note on the distances.** All colour differences here are CIEDE2000 (ΔE00). CIEDE2000 was derived from colour-difference judgements by observers with typical colour vision. Applied to simulated colours, it estimates how different those colours would look to a typical observer, which only approximates what people with a colour vision deficiency or an older eye can tell apart."""),
 
 code("""def min_pair(hexes, cond):
     from itertools import combinations
@@ -239,7 +241,7 @@ md("""If a pair falls below the threshold under some condition, you have found a
 
 ## 5 · Export your palette
 
-The files below contain every colour with its name, language, the AI's original and the evidence for any change."""),
+The files below contain every colour with its name, language, the AI's colour and the evidence for any change."""),
 
 code("""export = pal[["language", "name", "grounded_hex", "ai_hex", "spinner_hex", "de00", "replaced", "sdg", "sdg_hex"]]
 export.round(2).to_csv("grounded_palette.csv", index=False)
@@ -382,3 +384,11 @@ cells[_form] = code(_prompt_src)
 del cells[_reply]
 _r = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "reply_c = ai_reply" in "".join(c["source"]))
 cells[_r] = code("".join(cells[_r]["source"]).replace(", pasted=AI_REPLY", ""))
+
+
+# ── round of notes, October 2026 ──
+def _find(pred):
+    return next(k for k, c in enumerate(cells) if pred("".join(c["source"]), c["cell_type"]))
+cells[_find(lambda s, t: t == "code" and s.startswith("#@title Which AI?"))] = code('#@title Which AI?\nAI_PROVIDER = "Paste answers from my own AI"  #@param ["Paste answers from my own AI", "Gemini built into Colab"]\n#@markdown **Your own AI** (ChatGPT, Claude, Gemini, Copilot, …): the next cell shows a prompt to copy into it and one box per name. The names are filled in for you; just copy in the colour code (#RRGGBB) your AI gives for each.\n#@markdown **Gemini built into Colab** is for demonstration. It needs no set-up but stops working once Colab\'s free usage limit is reached.')
+cells[_find(lambda s, t: t == "code" and "PROMPT_C = f" in s)] = code('lines = "\\n".join(f"{r.language} | {plain_with_roman(r)}" for _, r in names.iterrows())\nfirst = names.iloc[0]\nPROMPT_C = f"""You are helping with a cross-cultural colour naming study.\nFor each colour name below, give the sRGB colour, as a hex code, that native speakers of that language\nwould consider the best example of the name: its most typical instance.\n\n{lines}\n\nReply with exactly one line for each, in this format and nothing else:\n{first.language} | {first[\'name\']} | #RRGGBB"""\nshow_prompt(PROMPT_C, AI_PROVIDER, rows=names, kind="colour")')
+cells[_find(lambda s, t: t == "code" and "PROMPT_C, AI_PROVIDER" in s and "show_ai_palette" in s)] = code('if AI_PROVIDER == PASTE:\n    pal = read_ai_colours(collected_answers(), names)    # the colour codes typed into the boxes\nelse:\n    pal = read_ai_colours(ask_ai(PROMPT_C, AI_PROVIDER), names)\nshow_ai_palette(pal)')

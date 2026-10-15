@@ -13,7 +13,11 @@ The United Nations identifies its 17 Sustainable Development Goals with 17 colou
 | **Perceptual** | Can people still tell the colours apart with a colour vision deficiency, or with an ageing eye? | within a community |
 | **Cognitive** | Do people reliably agree on what each colour is called, and do the names in different languages point to the same colour? | across languages |
 
-A palette can succeed on one axis and fail on the other. By the end you will have a two-axis picture of a subset of SDG colours and a comparison with what an AI system says the same colours are called.
+![The Colour Spinner](https://raw.githubusercontent.com/akvilesinkeviciute/colour-brings-people-together/v1.0/images/colour_spinner.png)
+
+*The Colour Spinner's six linked views: Picker, Namer, Thesaurus, Translator, Mapper and Profiler, with controls for language and for colour vision deficiency and ageing simulations.*
+
+A palette can succeed on one axis and fail on the other. By the end you will have a two-axis picture of a subset of SDG colours, your **test colours**, and a comparison with what an AI system says the same colours are called.
 
 **How to use this notebook.** Run each cell in order with **Shift + Enter**. The only things you need to change are the grey form fields on the right of some cells. Keep the [Colour Spinner](https://colornaming.net/spinner) open in another tab."""),
 
@@ -30,13 +34,14 @@ md("""## 2 · Choose your subset and languages
 
 Pick **three to five** SDG colours. Good audits mix an easy colour with a hard one: try one of the reds (1, 4, 5, 8), one of the blues (6, 14, 16, 17) and something in between such as 12.
 
-Tick the languages you want to audit. The Colour Spinner currently covers six. If either of you speaks one of them natively, include it, and include **OtjiHimba**, spoken by the Himba of northern Namibia, which has just seven indispensable colour terms: *serandu*, for example, covers what English splits into red, pink and orange.
+Choose a **source language**, then tick the **target languages** to compare it with. The Colour Spinner currently covers six. If either of you speaks one of them natively, include it, and include **OtjiHimba**, spoken by the Himba of northern Namibia, which has just seven indispensable colour terms: *serandu*, for example, covers what English splits into red, pink and orange.
 
 **Backend.** *Colour Spinner API* fetches everything for you. If the network is slow, choose *Copied from the browser* and fill in the sheet in section 4."""),
 
 code("""#@title Your pair's choices { run: "auto" }
 SUBSET = "1, 6, 12, 14"  #@param {type:"string"}
 SOURCE_LANGUAGE = "British English"  #@param ["American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]
+#@markdown **Target languages** (tick any):
 American_English = False  #@param {type:"boolean"}
 British_English = True  #@param {type:"boolean"}
 French = False  #@param {type:"boolean"}
@@ -65,7 +70,9 @@ These simulations show how a colour might *appear*, not how people with a colour
 code("""prefetch_simulations(SDG.hex.tolist())      # ask the Colour Spinner for all 17 colours at once
 show_conditions(SDG.hex.tolist(), labels=[str(i) for i in SDG.index])"""),
 
-md("""The chart below makes "merge" measurable. For each colour in your subset it finds the **nearest other SDG colour** under each condition and reports the CIEDE2000 colour difference (ΔE00) between them. A difference of about 1 is just noticeable side by side; for colours that must be told apart at a glance in a chart or a sign, aim for 10 or more. The small number under each value names the nearest neighbour."""),
+md("""The chart below makes "merge" measurable. For each colour in your subset it finds the **nearest other SDG colour** under each condition and reports the CIEDE2000 colour difference (ΔE00) between them. A difference of about 1 is just noticeable side by side; for colours that must be told apart at a glance in a chart or a sign, aim for 10 or more. The small number under each value names the nearest neighbour.
+
+**A note on the distances.** All colour differences in this notebook are CIEDE2000 (ΔE00). CIEDE2000 was derived from colour-difference judgements by observers with typical colour vision. Applied to simulated colours, it estimates how different those colours would look to a typical observer, which only approximates what people with a colour vision deficiency or an older eye can tell apart."""),
 
 code("""#@title Nearest-neighbour distinctiveness { run: "auto" }
 CONFUSABLE_BELOW_DELTA_E = 10  #@param {type:"slider", min:3, max:25, step:1}
@@ -187,7 +194,7 @@ plt.tight_layout(); plt.show()"""),
 
 md("""### Translatability
 
-The left swatch is the SDG colour. Each swatch to its right is the **best example** of the name that language uses for it, with its distance from the original. When those swatches differ from each other, the "same" colour word does not mean the same colour in each language."""),
+The left swatch is the test colour. Each swatch to its right is the **best example** of the name that language uses for it, with its distance from the test colour. When those swatches differ from each other, the "same" colour word does not mean the same colour in each language."""),
 
 code("""rows = ""
 for i in PICK:
@@ -209,7 +216,7 @@ show('<table class="babel"><tr><th></th>' + "".join(f"<th>{_h(l)}</th>" for l in
      f'<th></th></tr>{rows}</table><div class="note">Badges: ΔE00 from the SDG colour. '
      'Spread: the largest ΔE00 between two languages\\' best examples.</div>')"""),
 
-md("""The same information as a map. This is a top-down view of CAM16-UCS colour space, the perceptually uniform space the Colour Spinner works in: hue runs around the centre and colourfulness increases outwards. Each large disc is an SDG colour; the lines lead to where each language's name for it is centred."""),
+md("""The same information as a map. This is a top-down view of CAM16-UCS colour space, the perceptually uniform space the Colour Spinner works in: hue runs around the centre and colourfulness increases outwards. Each large disc is a test colour; the lines lead to where each language's name for it is centred."""),
 
 code("""fig, ax = plt.subplots(figsize=(7, 7))
 ax.axhline(0, color="#E4E4E0", lw=1, zorder=0); ax.axvline(0, color="#E4E4E0", lw=1, zorder=0)
@@ -231,7 +238,7 @@ plt.tight_layout(); plt.show()"""),
 
 md("""## 5 · Two axes, one picture
 
-Each disc is a colour from your subset. Its horizontal position is the **worst case** on the perceptual axis: the smallest nearest-neighbour ΔE00 across all seven viewing conditions. Its vertical position is the **average naming confidence** across your languages: the Spinner's confidence in its top name, averaged over the languages."""),
+Each disc is a test colour. Across: its **perceptual distance**, the ΔE00 to the nearest other SDG colour, for typical colour vision unless you choose another condition in the form. Up: its **naming confidence**, averaged over your languages unless you choose one. Both axes run from 0 to 1, so the two are on the same scale. The grey circle marks where the two thresholds meet. The table underneath gives the numbers, with each language's name and confidence."""),
 
 code("""#@title Scorecard { run: "auto" }
 HARD_TO_NAME_BELOW_CONFIDENCE = 0.5  #@param {type:"slider", min:0.2, max:0.9, step:0.05}
@@ -265,12 +272,12 @@ md("""## 6 · What does an AI system say?
 
 Now ask a current AI system to name the same colours in the same languages, and compare its answers with how speakers actually name them.
 
-**Which AI?** We demonstrate with the Gemini model built into Colab because it needs no set-up. It stands in for AI systems in general and isn't a recommendation. You are welcome to use the AI you use day to day (ChatGPT, Claude, Copilot, …) instead, and the comparison is often more meaningful that way.
+**Which AI?** Use the AI you use day to day (ChatGPT, Claude, Gemini, Copilot, …): the comparison is most meaningful that way, and it's what the boxes below are for. Colab's built-in Gemini is also offered, for demonstration.
 
 Choose in the form below:
 
-- **Colab's Gemini:** leave the form as it is and run the cells in order.
-- **Your own AI:** choose *Paste the reply from my own AI*. The next cell shows the prompt to copy into your AI tool, and a box to paste its reply into. The reply can be in any reasonable layout: lines, a table or JSON."""),
+- **Colab's Gemini:** choose it in the form and run the cells in order. It's for demonstration and stops working once Colab's free usage limit is reached.
+- **Your own AI:** keep *Paste answers from my own AI*. The next cell shows the prompt to copy into your AI tool, and one box per answer with the colour codes already filled in: you only copy in the names."""),
 
 code("""lang_note = "; ".join(f"{l}" + (" (spoken by the Himba of northern Namibia)" if l == "OtjiHimba" else "")
                       for l in LANGUAGES)
@@ -326,7 +333,7 @@ ax.set_xlim(0, 1.1); ax.invert_yaxis(); ax.xaxis.set_major_formatter(mpl.ticker.
 ax.set_title("How often the AI agrees with speakers")
 plt.tight_layout(); plt.show()"""),
 
-md("""A match on a colour with low confidence says little: when the Spinner's confidence in its top name is only around 30%, other names are also defensible. So for every name that differs, the last column asks the Spinner's Mapper where the AI's name is centred for speakers of that language. If that colour is close to the SDG colour, the AI chose a plausible neighbouring name. If it is far away, or the name isn't one speakers use at all, the AI's name would mislead them. Large distances on high-agreement colours are the ones to bring to the group.
+md("""A match on a colour with low confidence says little: when the Spinner's confidence in its top name is only around 30%, other names are also defensible. So for every name that differs, the last column asks the Spinner's Mapper where the AI's name is centred for speakers of that language. If that colour is close to the test colour, the AI chose a plausible neighbouring name. If it is far away, or the name isn't one speakers use at all, the AI's name would mislead them. Large distances on high-agreement colours are the ones to bring to the group.
 
 ## 7 · Save your results for Part C
 
@@ -418,3 +425,12 @@ cells[_form] = code(_prompt_src)
 del cells[_reply]
 _r = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "reply_b = ai_reply" in "".join(c["source"]))
 cells[_r] = code("".join(cells[_r]["source"]).replace(", pasted=AI_REPLY", ""))
+
+
+# ── round of notes, October 2026 ──
+def _find(pred):
+    return next(k for k, c in enumerate(cells) if pred("".join(c["source"]), c["cell_type"]))
+cells[_find(lambda s, t: t == "code" and s.startswith("#@title Which AI?"))] = code('#@title Which AI?\nAI_PROVIDER = "Paste answers from my own AI"  #@param ["Paste answers from my own AI", "Gemini built into Colab"]\n#@markdown **Your own AI** (ChatGPT, Claude, Gemini, Copilot, …): the next cell shows a prompt to copy into it and one box per colour and language. The colour codes are filled in for you; just copy in the names your AI gives.\n#@markdown **Gemini built into Colab** is for demonstration. It needs no set-up but stops working once Colab\'s free usage limit is reached.')
+cells[_find(lambda s, t: t == "code" and "PROMPT_B = f" in s)] = code('lines = "\\n".join(f"{r.hex} | {r.language}" for _, r in naming.iterrows())\nhimba = "\\n(OtjiHimba is spoken by the Himba of northern Namibia.)" if "OtjiHimba" in LANGUAGES else ""\nPROMPT_B = f"""You are helping with a cross-cultural colour naming study.\nFor each colour code and language below, give the single colour name that most native speakers of that\nlanguage would use for it. Write each name in that language and in its usual script; for a non-Latin\nscript, add the Latin spelling in brackets.{himba}\n\n{lines}\n\nReply with exactly one line for each, in this format and nothing else:\n#E5243B | {LANGUAGES[-1]} | name"""\nshow_prompt(PROMPT_B, AI_PROVIDER, rows=naming[["hex", "language"]], kind="name")')
+cells[_find(lambda s, t: t == "code" and "PROMPT_B, AI_PROVIDER" in s and "comparison" in s)] = code('if AI_PROVIDER == PASTE:\n    ai_names = collected_answers()                        # the names typed into the boxes\nelse:\n    ai_names = read_ai_names(ask_ai(PROMPT_B, AI_PROVIDER))\nai_names["language"] = ai_names["language"].map(canonical_language)\n\ncomparison = naming.merge(ai_names, on=["hex", "language"], how="left")\ncomparison["agrees"] = [same_name(ai, name, rom)    # any script; ignores case and accents\n                        for ai, name, rom in zip(comparison.ai_name, comparison.name, comparison.romanized)]\ncomparison = where_ai_names_point(comparison, spinner)   # Mapper: where each differing AI name is centred\nshow_name_comparison(comparison, CONFUSABLE_BELOW_DELTA_E)\nplot_agreement_by_language(comparison, LANGUAGES)')
+cells[_find(lambda s, t: t == "code" and "card = scorecard" in s or "score = scorecard" in s)] = code('#@title Scorecard { run: "auto" }\nSCORE_LANGUAGE = "Average of my languages"  #@param ["Average of my languages", "American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]\nSCORE_CONDITION = "Typical"  #@param ["Typical", "Protanopia", "Deuteranopia", "Tritanopia", "Age 40", "Age 60", "Age 80", "Worst case of all conditions"]\nNORMALISE_BY = "Largest value in my subset"  #@param ["Largest value in my subset", "Range across all 17 SDG colours"]\nHARD_TO_NAME_BELOW_CONFIDENCE = 0.5  #@param {type:"slider", min:0.2, max:0.9, step:0.05}\n#@markdown **SCORE_LANGUAGE**: whose naming confidence to plot. **SCORE_CONDITION**: whose vision the perceptual distance is for (*Typical* = typical colour vision).\n#@markdown A colour whose top name has a Spinner confidence below **HARD_TO_NAME_BELOW_CONFIDENCE** counts as hard to name.\n\ncard = scorecard(PICK, naming, SCORE_LANGUAGE, SCORE_CONDITION, NORMALISE_BY)\nplot_two_axes(card, CONFUSABLE_BELOW_DELTA_E, HARD_TO_NAME_BELOW_CONFIDENCE)\nshow_scorecard(card)', hidden=False)

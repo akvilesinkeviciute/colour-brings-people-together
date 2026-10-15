@@ -57,7 +57,7 @@ def plot_nearest_neighbours(nn_de, nn_id, threshold):
     ax.set_xticks(range(len(conds)), [condition_label(c) for c in conds], rotation=30, ha="right")
     row_chips(ax, [SDG.hex[i] for i in pick], [f"SDG {i}" for i in pick])
     ax.tick_params(axis="x", length=0); _hide_spines(ax)
-    ax.set_title(f"Distance to the nearest other SDG colour (ΔE00); red cells fall below {threshold}")
+    ax.set_title(f"Test colour to nearest other SDG colour (ΔE00); red below {threshold}")
     plt.tight_layout(); plt.show()
 
 @needs_simulations()
@@ -111,7 +111,6 @@ def plot_nameability(naming, pick, languages):
     gap = {i: k for k, i in enumerate(pick)}
     ys = [n + 0.6 * gap[i] for n, (i, l) in enumerate(rows)]
     fig, ax = plt.subplots(figsize=(8.5, 0.34 * len(rows) + 0.5 * len(pick) + 1))
-    blend = mpl.transforms.blended_transform_factory(ax.transAxes, ax.transData)
     for y, (i, l) in zip(ys, rows):
         r = naming[(naming.sdg == i) & (naming.language == l)].iloc[0]
         ax.hlines(y, 0, r.confidence, color="#DADAD5", lw=6, capstyle="round", zorder=1)
@@ -119,19 +118,18 @@ def plot_nameability(naming, pick, languages):
         ax.text(r.confidence + 0.025, y, f"{r['name']}  {r.confidence:.0%}", va="center", fontsize=10)
     for i in pick:
         g = [y for y, (j, _) in zip(ys, rows) if j == i]
-        if not g: continue
-        ax.add_patch(mpl.patches.Rectangle((-0.3, min(g) - 0.4), 0.07, max(g) - min(g) + 0.8,
-                     color=SDG.hex[i], transform=blend, clip_on=False))
-        ax.text(-0.265, (min(g) + max(g)) / 2, str(i), transform=blend, ha="center", va="center",
-                rotation=90, color=ink_on(SDG.hex[i]), fontweight="bold", clip_on=False)
+        if g:
+            chip(ax, (min(g) + max(g)) / 2, SDG.hex[i], f"SDG {i}",
+                 height=max(g) - min(g) + 0.72, gap_in=1.45)
     ax.set_yticks(ys, [l for _, l in rows]); ax.tick_params(axis="y", length=0)
     ax.invert_yaxis(); ax.set_xlim(0, 1.18); ax.spines["left"].set_visible(False)
     ax.set_xticks([0, .25, .5, .75, 1]); ax.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(1))
     ax.set_xlabel("Spinner confidence in its top name")
     ax.set_title("Nameability: how confident is the Spinner's top name?")
-    plt.tight_layout(); plt.show()
+    plt.tight_layout(); fig.subplots_adjust(left=0.30); plt.show()
 
 def show_translatability(naming, pick, languages, threshold):
+    td = 'style="width:132px;padding:4px 10px 4px 0"'
     rows = ""
     for i in pick:
         sub = naming[naming.sdg == i]
@@ -139,18 +137,20 @@ def show_translatability(naming, pick, languages, threshold):
         for lang in languages:
             r = sub[sub.language == lang]
             if r.empty or not isinstance(r.best_example.iloc[0], str):
-                cells += f'<td style="color:{MUTED}">—</td>'; continue
+                cells += f'<td {td}><span style="color:{MUTED}">—</span></td>'; continue
             b = r.best_example.iloc[0]
-            cells += (f'<td><div class="pair" style="width:110px"><div style="background:{b};color:{ink_on(b)}">'
+            cells += (f'<td {td}><div class="pair" style="width:118px"><div style="background:{b};color:{ink_on(b)}">'
                       f'{esc(r.name.iloc[0])}<br>{b}</div></div><div style="margin-top:3px">'
                       f'{de_badge(r.drift.iloc[0], threshold)}</div></td>')
         sp = spread(sub.best_example.tolist())
-        rows += (f'<tr><td><div class="pair" style="width:96px"><div style="background:{SDG.hex[i]};'
-                 f'color:{ink_on(SDG.hex[i])};font-weight:700;font-size:13px">SDG {i}</div></div></td>{cells}'
-                 f'<td style="color:{MUTED}">{"" if pd.isna(sp) else "spread " + format(sp, ".1f")}</td></tr>')
-    show('<table class="babel"><tr><th></th>' + "".join(f"<th>{esc(l)}</th>" for l in languages) +
-         f'<th></th></tr>{rows}</table><div class="note">Badges: ΔE00 from the SDG colour. '
-         "Spread: the largest ΔE00 between two languages' best examples.</div>")
+        rows += (f'<tr><td style="width:110px"><div class="pair" style="width:96px"><div style="background:{SDG.hex[i]};'
+                 f'color:{ink_on(SDG.hex[i])};font-weight:700;font-size:13px">SDG {i}</div></div></td>'
+                 f'<td style="width:36px"></td>{cells}'
+                 f'<td style="color:{MUTED};white-space:nowrap">{"" if pd.isna(sp) else "spread " + format(sp, ".1f")}</td></tr>')
+    show('<table class="babel" style="table-layout:fixed"><tr><th>Test colour</th><th></th>' +
+         "".join(f'<th {td}>{esc(l)}</th>' for l in languages) +
+         f'<th></th></tr>{rows}</table><div class="note">Badges: ΔE00 between the test colour and each '
+         "language's best example (focal colour). Spread: the largest ΔE00 between two languages' best examples.</div>")
 
 def plot_name_map(naming, pick, languages):
     fig, ax = plt.subplots(figsize=(7, 7)); _ucs_axes(ax)
@@ -170,80 +170,144 @@ def plot_name_map(naming, pick, languages):
 
 
 # ── Part B: two axes ──────────────────────────────────────────────────────
-def scorecard(nn_de, naming):
-    """One row per colour: worst-case perceptual distance and mean naming confidence."""
-    pick = list(nn_de.index) if nn_de is not None else list(dict.fromkeys(naming.sdg))
-    return pd.DataFrame({
-        "worst_case_dE00": nn_de.min(axis=1) if nn_de is not None else pd.Series(np.nan, index=pick),
-        "worst_condition": nn_de.idxmin(axis=1) if nn_de is not None else pd.Series(None, index=pick),
-        "mean_confidence": naming.groupby("sdg").confidence.mean(),
-        "language_spread": naming.groupby("sdg").best_example.apply(lambda s: spread(s.tolist())),
-    }).loc[pick]
+ALL_LANGUAGES = "Average of my languages"
+WORST_CASE = "Worst case of all conditions"
+SUBSET_MAX = "Largest value in my subset"
+SDG_RANGE = "Range across all 17 SDG colours"
 
-def plot_two_axes(score, distinct_at, agree_at):
-    if score.worst_case_dE00.isna().all():
-        show("The two-axis picture needs the perceptual audit in section 3, which needs the "
-             "Colour Spinner's simulations. Run section 3 again once they are available.")
+def _distances(ids, condition):
+    conds = CONDITIONS if condition == WORST_CASE else [condition]
+    de, _ = nearest_neighbours(ids, conds)
+    if de is None:
+        return None
+    return de.min(axis=1) if condition == WORST_CASE else de[condition]
+
+def scorecard(pick, naming, language=ALL_LANGUAGES, condition="Typical", normalise=SUBSET_MAX):
+    """One row per test colour: its perceptual distance (ΔE00 to the nearest other SDG colour, under
+    `condition`) and naming confidence (in `language`, or averaged), both on a 0–1 scale."""
+    de = _distances(pick, condition)
+    if de is None:
+        return None
+    if normalise == SDG_RANGE:
+        all_de = _distances(list(SDG.index), condition)
+        lo, hi = all_de.min(), all_de.max()
+    else:
+        lo, hi = 0.0, de.max()
+    conf = naming.pivot(index="sdg", columns="language", values="confidence")
+    names = naming.pivot(index="sdg", columns="language", values="name")
+    y = conf.mean(axis=1) if language == ALL_LANGUAGES else conf.get(language, pd.Series(np.nan, index=conf.index))
+    card = pd.DataFrame({"dE00": de, "perceptual_0to1": (de - lo) / (hi - lo) if hi > lo else 1.0,
+                         "confidence_0to1": y.reindex(pick)}, index=pick)
+    for l in conf.columns:
+        card[l] = [f"{names.at[i, l]} ({conf.at[i, l]:.0%})" if i in conf.index and not pd.isna(conf.at[i, l]) else ""
+                   for i in pick]
+    card.attrs.update(lo=lo, hi=hi, language=language, condition=condition, normalise=normalise)
+    card.index.name = "SDG"
+    return card
+
+def plot_two_axes(card, confusable_below, hard_below):
+    if card is None:
         return
-    fig, ax = plt.subplots(figsize=(7.5, 6))
-    xmax = max(2.2 * distinct_at, score.worst_case_dE00.max() * 1.15)
-    ax.axvline(distinct_at, color="#BDBDB8", ls="--", lw=1); ax.axhline(agree_at, color="#BDBDB8", ls="--", lw=1)
+    lo, hi = card.attrs["lo"], card.attrs["hi"]
+    x_cut = (confusable_below - lo) / (hi - lo) if hi > lo else 0.5
+    fig, ax = plt.subplots(figsize=(7.5, 6.4))
+    ax.axvline(x_cut, color="#BDBDB8", ls="--", lw=1); ax.axhline(hard_below, color="#BDBDB8", ls="--", lw=1)
+    if 0 <= x_cut <= 1:
+        ax.scatter(x_cut, hard_below, s=900, facecolor="none", edgecolor="#BDBDB8", lw=2, zorder=2)
     for x, y, t in [(0.02, 0.98, "named, but easily confused"), (0.98, 0.98, "robust on both axes"),
                     (0.02, 0.02, "fragile on both axes"), (0.98, 0.02, "distinct, but hard to name")]:
         ax.text(x, y, t, transform=ax.transAxes, ha="left" if x < .5 else "right",
                 va="top" if y > .5 else "bottom", color=MUTED, fontsize=10, style="italic")
-    for i, r in score.iterrows():
-        ax.scatter(r.worst_case_dE00, r.mean_confidence, s=900, color=SDG.hex[i], edgecolor="white", lw=2.5, zorder=3)
-        ax.text(r.worst_case_dE00, r.mean_confidence, str(i), ha="center", va="center",
+    for i, r in card.iterrows():
+        if pd.isna(r.confidence_0to1): continue
+        ax.scatter(r.perceptual_0to1, r.confidence_0to1, s=900, color=SDG.hex[i], edgecolor="white", lw=2.5, zorder=3)
+        ax.text(r.perceptual_0to1, r.confidence_0to1, str(i), ha="center", va="center",
                 color=ink_on(SDG.hex[i]), fontweight="bold", zorder=4)
-    ax.set_xlim(0, xmax); ax.set_ylim(0, 1); ax.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(1))
-    ax.set_xlabel("Perceptual: worst-case ΔE00 to nearest neighbour"); ax.set_ylabel("Cognitive: mean naming confidence")
-    ax.set_title("Where your colours sit on the two axes")
+    ax.set_xlim(-0.05, 1.05); ax.set_ylim(-0.05, 1.05)
+    cond = card.attrs["condition"]
+    vision = "typical colour vision" if cond == "Typical" else ("worst case of all conditions" if cond == WORST_CASE else cond)
+    scale = "÷ largest in subset" if card.attrs["normalise"] == SUBSET_MAX else "scaled to all 17 SDG colours"
+    ax.set_xlabel(f"Perceptual distance (ΔE00 to nearest SDG colour, {vision}; {scale})")
+    ax.set_ylabel("Naming confidence" + ("" if card.attrs["language"] == ALL_LANGUAGES else f" ({card.attrs['language']})")
+                  + (" (average of languages)" if card.attrs["language"] == ALL_LANGUAGES else ""))
+    ax.set_title("Naming confidence × perceptual distance")
+    if not 0 <= x_cut <= 1:
+        ax.text(0.5, -0.16, f"The ΔE00 {confusable_below} line falls outside this scale.", transform=ax.transAxes,
+                ha="center", color=MUTED, fontsize=9)
     plt.tight_layout(); plt.show()
+
+def show_scorecard(card):
+    if card is None:
+        return
+    langs = [c for c in card.columns if c not in ("dE00", "perceptual_0to1", "confidence_0to1")]
+    head = ("<tr><th>Test colour</th><th>ΔE00</th><th>Perceptual (0–1)</th><th>Confidence (0–1)</th>" +
+            "".join(f"<th>{esc(l)}</th>" for l in langs) + "</tr>")
+    body = ""
+    for i, r in card.iterrows():
+        conf = "" if pd.isna(r.confidence_0to1) else f"{r.confidence_0to1:.2f}"
+        body += (f'<tr><td><div class="pair" style="width:96px;height:40px"><div style="background:{SDG.hex[i]};'
+                 f'color:{ink_on(SDG.hex[i])};font-weight:700;font-size:12px">SDG {i}</div></div></td>'
+                 f"<td>{r.dE00:.1f}</td><td>{r.perceptual_0to1:.2f}</td><td><b>{conf}</b></td>" +
+                 "".join(f"<td>{esc(r[l])}</td>" for l in langs) + "</tr>")
+    show(f'<table class="babel">{head}{body}</table>'
+         '<div class="note">Language columns: the Spinner\'s top name and its confidence for each test colour.</div>')
 
 
 # ── Part B: the AI's names ────────────────────────────────────────────────
 # ── Asking the AI, and reading its reply ─────────────────────────────────
-PASTE = "Paste the reply from my own AI"
-_BOX = {"widget": None}
+PASTE = "Paste answers from my own AI"
+_ANS = {"boxes": [], "rows": None, "kind": None}
 
-def paste_box():
-    """A text box under the cell to paste your own AI's reply into (no code editing)."""
+def answer_boxes(rows, kind):
+    """One box per answer. kind='name': rows have hex and language, and you type the AI's name.
+    kind='colour': rows have language and name, and you type the AI's colour code."""
     try:
         import ipywidgets as w
     except ImportError:
-        print("Paste boxes are unavailable here: call ai_reply(..., pasted=your_text) instead.")
-        return None
-    box = w.Textarea(placeholder="Paste your AI's whole reply here, then run the next cell.",
-                     layout=w.Layout(width="100%", height="220px"))
-    _BOX["widget"] = box
-    display(box)
-    return box
+        print("Answer boxes need ipywidgets, which Colab includes.")
+        return
+    rows = rows.reset_index(drop=True)
+    items, boxes = [], []
+    for _, r in rows.iterrows():
+        if kind == "name":
+            left = (f'<span style="display:inline-block;width:34px;height:22px;border-radius:3px;'
+                    f'vertical-align:middle;background:{r.hex}"></span>&nbsp; <b>{r.hex}</b> · {_h(r.language)}')
+            hint = "name your AI gave"
+        else:
+            left = f'{_h(r.language)}: <b>{_h(plain_with_roman(r))}</b>'
+            hint = "#RRGGBB your AI gave"
+        box = w.Text(placeholder=hint, layout=w.Layout(width="280px"))
+        boxes.append(box)
+        items.append(w.HBox([w.HTML(left, layout=w.Layout(width="320px")), box]))
+    _ANS.update(boxes=boxes, rows=rows, kind=kind)
+    display(w.VBox(items))
 
-def pasted_reply():
-    box = _BOX["widget"]
-    text = box.value if box is not None else ""
-    if not text.strip():
-        raise ValueError("The paste box is empty: paste your AI's reply into it, then run this cell again.")
-    return text
+def collected_answers():
+    """What was typed into the answer boxes, as a table."""
+    rows, kind = _ANS["rows"], _ANS["kind"]
+    if rows is None:
+        raise ValueError("Run the cell above first: it shows the boxes to fill in.")
+    values = [b.value.strip() for b in _ANS["boxes"]]
+    if not any(values):
+        raise ValueError("The boxes are empty: copy your AI's answers into them, then run this cell again.")
+    t = rows.copy()
+    if kind == "name":
+        t["ai_name"] = [v or None for v in values]
+        return t[["hex", "language", "ai_name"]]
+    t["ai_hex"] = [parse_colour(v) if v and (_HEX.search(v) or len(re.findall(r"\d+", v)) == 3) else None
+                   for v in values]
+    return t[["language", "name", "ai_hex"]]
 
-def show_prompt(prompt, provider):
-    """Show the prompt; for your own AI, also a box to paste its reply into."""
+def show_prompt(prompt, provider, rows=None, kind="name"):
+    """Show the prompt; for your own AI, also one box per answer."""
+    print(prompt)
     if provider == PASTE:
-        show("<b>1.</b> Copy the prompt below into your AI tool.<br>"
-             "<b>2.</b> Paste its whole reply into the box underneath, then run the next cell. "
-             "Extra chatter, tables and code fences are fine.")
-        print(prompt)
-        paste_box()
+        what = "the name" if kind == "name" else "the colour code"
+        show(f"<b>1.</b> Copy the prompt above into your AI tool.<br>"
+             f"<b>2.</b> For each line below, copy {what} it gave into the box, then run the next cell.")
+        answer_boxes(rows, kind)
     else:
-        print(prompt)
         show(f'<div class="note">The next cell sends this prompt to {esc(provider)}.</div>')
-
-def ai_reply(prompt, provider, model="", base_url="", pasted=None):
-    """Your pasted reply, or the provider's answer to `prompt`."""
-    if provider == PASTE:
-        return pasted if pasted else pasted_reply()
-    return ask_ai(prompt, provider, model, base_url)
 
 _HEX = re.compile(r"#?[0-9A-Fa-f]{6}")
 
@@ -283,7 +347,7 @@ def read_ai_names(reply):
 
 def where_ai_names_point(cmp, spinner):
     """For each AI name that differs from the speakers' top name, ask the Spinner's Mapper
-    where that name is centred in the language, and how far that is from the SDG colour."""
+    where that name is centred in the language, and how far that is from the test colour."""
     cmp = cmp.copy()
     cmp["ai_best"], cmp["ai_drift"], cmp["ai_status"] = None, np.nan, ""
     for k, r in cmp.iterrows():
@@ -328,7 +392,7 @@ def show_name_comparison(cmp, threshold=10):
     show('<table class="babel"><tr><th></th><th></th><th>Language</th><th>Speakers (Spinner)</th>'
          f'<th>AI system</th><th></th><th>Where the AI\'s name points</th></tr>{rows}</table>'
          '<div class="note">For names that differ: the Spinner\'s best example of the AI\'s name in that language, '
-         'and its ΔE00 from the SDG colour. Small: a plausible neighbouring name. Large: the name means a '
+         'and its ΔE00 from the test colour. Small: a plausible neighbouring name. Large: the name means a '
          'different colour to speakers.</div>')
 
 def plot_agreement_by_language(cmp, languages):
@@ -378,8 +442,12 @@ def show_names(names):
          for l in langs) + "</table>")
 
 def read_ai_colours(reply, names):
-    """Attach the AI's colour for each name (matched on language + name)."""
-    ai = parse_ai_table(reply, ["language", "name", "colour"])
+    """Attach the AI's colour for each name (matched on language + name). `reply` is the AI's text,
+    or the table from the answer boxes."""
+    if isinstance(reply, pd.DataFrame):
+        ai = reply.rename(columns={"ai_hex": "colour"}).copy()
+    else:
+        ai = parse_ai_table(reply, ["language", "name", "colour"])
     def colour_of(r):
         for key in ("rgb", "colour", "color", "hex"):
             v = r.get(key)
@@ -501,7 +569,7 @@ def show_grounded(pal, languages):
                       f'<div class="hex">{r.grounded_hex}</div></div></div>')
         show(f'<div style="font-weight:700;margin:12px 0 4px">{esc(lang)}</div><div class="surround">{tiles}</div>')
     show(f'<div class="note">{int(pal.replaced.sum())} of {int(pal.grounded_hex.notna().sum())} colours '
-         "replaced with the Colour Spinner's best example. Top strip: the AI's original colour.</div>")
+         "replaced with the Colour Spinner's best example. Top strip: the AI's colour.</div>")
 
 @needs_simulations()
 def closest_pairs(pal, languages, conditions=CONDITIONS):
