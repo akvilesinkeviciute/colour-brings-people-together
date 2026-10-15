@@ -40,10 +40,10 @@ Run both notebooks on the venue network if you can. In Part B, the *Ask the Colo
 
 | Problem | What participants do |
 |---|---|
-| Spinner API unreachable | Set `BACKEND` to *Copied from the browser*, then fill in the `SHEET` table from the Spinner's Namer and Mapper panels. Mapper RGB can be typed exactly as shown, e.g. `232 21 56`. |
+| Spinner API unreachable | Set `BACKEND` to *Copied from the browser*. A row of boxes appears for each test colour and language; participants copy the Namer's name and confidence and the Mapper's best-example RGB from the Spinner in the browser. |
 | Spinner simulations unreachable | Sections 3 and 5 of Part B and the re-check in Part C show a message. Once the connection is back, run `retry_simulations()` and rerun those cells. Meanwhile, use the Spinner's "Simulate age/CVD" menu in the browser. |
 | Colab's built-in Gemini stops working (e.g. a usage-limit error) | Switch the form to *Paste answers from my own AI*, the default. Participants copy the prompt into any AI and type its answers into the boxes. |
-| Lost `partB_results.csv` | In Part C, choose *Type them in* and list `language, name` rows. |
+| Lost `partB_results.csv` | In Part C, choose *Type them in*: participants pick a language and type each colour name into the boxes. |
 | No Google account | Do the whole audit in the Spinner's browser interface. The notebooks are optional enrichment, as stated in the proposal. |
 
 ### The AI system
