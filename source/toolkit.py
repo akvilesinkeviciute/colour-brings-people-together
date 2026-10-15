@@ -22,7 +22,7 @@ except ImportError:
 
 # ── The six languages currently covered by the Colour Spinner ────────────
 SPINNER_LANGUAGES = ["American English", "British English", "French",
-                     "Greek", "Himba", "Spanish"]
+                     "Greek", "OtjiHimba", "Spanish"]
 
 # ── UN Sustainable Development Goal palette ──────────────────────────────
 #    Hex values from the UN SDG communications guidelines.
@@ -124,10 +124,15 @@ _check_colour_library()
 #  (see simulate() in section 3). This section only names the conditions.
 CONDITIONS = ["Typical", "Protanopia", "Deuteranopia", "Tritanopia",
               "Age 40", "Age 60", "Age 80"]
-# The Spinner simulates age bands; its menu labels them by the upper age.
-AGE_BANDS = {"Age 40": "16–40", "Age 60": "40–60", "Age 80": "60–80"}
+# Ageing is lens yellowing at ages 40, 60 and 80 (Sinkeviciute et al. 2026). The Spinner's menu sends
+# these as the codes 16-40, 40-60 and 60-80 (see SPINNER_API).
 def condition_label(c, sep="\n"):
-    return f"{c}{sep}({AGE_BANDS[c]})" if c in AGE_BANDS else c
+    return c
+
+# The Spinner's language menu says "Himba"; the language is OtjiHimba.
+LANGUAGE_ALIASES = {"himba": "OtjiHimba", "otjihimba": "OtjiHimba"}
+def canonical_language(name):
+    return LANGUAGE_ALIASES.get(str(name).strip().casefold(), str(name).strip())
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -155,7 +160,7 @@ SPINNER_API = {
                          "Age 60": "40-60", "Age 80": "60-80"},
     # Language numbers follow the order of the Spinner's language menu.
     "language_ids": {"American English": 1, "British English": 2, "French": 3,
-                     "Greek": 4, "Himba": 5, "Spanish": 6},
+                     "Greek": 4, "OtjiHimba": 5, "Spanish": 6},
 }
 
 def _strip(html_text):
@@ -201,7 +206,7 @@ class ApiSpinner:
 
     def _lang(self, language):
         try:
-            return self.cfg["language_ids"][language]
+            return self.cfg["language_ids"][canonical_language(language)]
         except KeyError:
             raise KeyError(f"The Colour Spinner has no language called '{language}'.")
 
@@ -220,6 +225,11 @@ class ApiSpinner:
                 raise RuntimeError(f"The Colour Spinner returned {resp.status_code}. Check your internet "
                                    "connection, or set BACKEND to 'Copied from the browser'.")
             res = parse_color_picker(resp.text)
+            # The Namer gives a Latin spelling only for some languages. When the Translator is set to
+            # the same language it names the same word, so its Latin spelling can stand in.
+            if (not res.get("romanized") or norm(res["romanized"]) == norm(res["name"])) and target == language \
+                    and res.get("translation_romanized") and same_name(res.get("translation") or "", res["name"]):
+                res["romanized"] = res["translation_romanized"]
             self._pages[key] = res
             self._ids.setdefault(language, {}).update({norm(n): i for n, i in res["name_ids"].items()})
             if res["best_example"]:
@@ -249,7 +259,7 @@ class ApiSpinner:
         for k in ("simulated", "result", "rgb", "colour", "color"):
             if isinstance(d.get(k), dict): d = d[k]
         if all(k in d for k in "rgb"):
-            return rgb_to_hex([float(d["r"]), float(d["g"]), float(d["b"])])
+            return rgb_to_hex(_to_255([float(d["r"]), float(d["g"]), float(d["b"])]))
         found = find_colours(j)
         if not found:
             raise RuntimeError(f"Could not read a colour from the Spinner's simulation reply: {j}")
@@ -274,6 +284,13 @@ class ApiSpinner:
         self._best[key] = hexes[0]
         return hexes[0]
 
+def _to_255(v):
+    """RGB in 0–255, whether the Spinner sent 0–255 or 0–1 values."""
+    v = [float(x) for x in v]
+    if all(x <= 1 for x in v) and any(x != int(x) for x in v):
+        v = [x * 255 for x in v]
+    return v
+
 def find_colours(obj):
     """Collect colours from a JSON reply in the order they appear (hex strings or [r, g, b] lists)."""
     out = []
@@ -282,7 +299,7 @@ def find_colours(obj):
             for v in o.values(): walk(v)
         elif isinstance(o, list):
             if len(o) == 3 and all(isinstance(x, (int, float)) for x in o) and all(0 <= x <= 255 for x in o):
-                out.append(rgb_to_hex(o))
+                out.append(rgb_to_hex(_to_255(o)))
             else:
                 for v in o: walk(v)
         elif isinstance(o, str):
@@ -342,7 +359,8 @@ def prefetch_simulations(hexes, conditions=CONDITIONS):
         list(pool.map(lambda job: try_call(simulate, *job), jobs[1:]))
 
 def simulation_source_note():
-    return "Simulations from the Colour Spinner (colornaming.net/spinner); age rows are its age bands."
+    return ("Simulations from the Colour Spinner: colour vision deficiencies as dichromacy (Viénot et al. 1999); "
+            "ageing as lens yellowing at ages 40, 60 and 80 (Pokorny et al. 1987).")
 
 def needs_simulations(default=None):
     """Decorator: if the Spinner's simulations are unavailable, explain instead of crashing."""
@@ -391,6 +409,7 @@ class SheetSpinner:
         if missing:
             raise ValueError(f"The sheet needs the columns {cols}; missing {sorted(missing)}.")
         if len(self.rows):
+            self.rows["language"] = self.rows["language"].map(canonical_language)
             self.rows["hex"] = self.rows["hex"].map(parse_colour)
             self.rows["best_example"] = self.rows["best_example"].map(
                 lambda v: parse_colour(v) if isinstance(v, str) and v else None)
@@ -398,13 +417,13 @@ class SheetSpinner:
                 lambda v: v / 100 if v > 1 else v)
 
     def name(self, hex_, language):
-        m = self.rows[(self.rows.hex == hex_.upper()) & (self.rows.language == language)]
+        m = self.rows[(self.rows.hex == hex_.upper()) & (self.rows.language == canonical_language(language))]
         if m.empty:
             raise KeyError(f"no row for {hex_} in {language}")
         return {"name": m.iloc[0]["name"], "confidence": float(m.iloc[0]["confidence"])}
 
     def best_example(self, name, language):
-        m = self.rows[(self.rows.language == language) & (self.rows.name.map(norm) == norm(name))
+        m = self.rows[(self.rows.language == canonical_language(language)) & (self.rows.name.map(norm) == norm(name))
                       & self.rows.best_example.notna()]
         if m.empty:
             raise KeyError(f"no best example for '{name}' in {language}")
@@ -567,7 +586,6 @@ def show_conditions(hexes, labels=None, conditions=CONDITIONS, width=40, note=Tr
         f'line-height:1.2;padding-bottom:3px;overflow-wrap:anywhere">{_h(l)}</div>' for l in labels) + "</div>"
     rows = "".join(
         f'<div class="row"><div class="rowlab">{_h(c)}'
-        + (f'<br><span style="font-size:10px;opacity:.8">{AGE_BANDS[c]}</span>' if c in AGE_BANDS else "")
         + '</div>' + "".join(
             f'<div class="mini" style="{w};background:{simulate(h, c)}" title="{simulate(h, c)}"></div>'
             for h in hexes) + "</div>" for c in conditions)
@@ -588,7 +606,7 @@ def show_babel(table, languages):
                 extra = (f' <span style="color:{MUTED};font-size:11px">{_h(rom)}</span>'
                          if isinstance(rom, str) and rom and norm(rom) != norm(n) else "")
                 cells += (f'<td><b>{_h(n)}</b>{extra}<div class="bar"><i style="width:{w}%"></i></div>'
-                          f'<span style="color:{MUTED};font-size:11px">{w}% agree</span></td>')
+                          f'<span style="color:{MUTED};font-size:11px">{w}% confidence</span></td>')
             else:
                 cells += f'<td style="color:{MUTED}">—</td>'
         body += (f'<tr><td><div class="pair" style="width:96px"><div style="background:{r.hex};'

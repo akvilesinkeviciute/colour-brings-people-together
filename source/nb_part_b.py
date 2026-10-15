@@ -30,23 +30,23 @@ md("""## 2 · Choose your subset and languages
 
 Pick **three to five** SDG colours. Good audits mix an easy colour with a hard one: try one of the reds (1, 4, 5, 8), one of the blues (6, 14, 16, 17) and something in between such as 12.
 
-Tick the languages you want to audit. The Colour Spinner currently covers six. If either of you speaks one of them natively, include it, and include **Himba**, whose speakers partition colour very differently from European languages.
+Tick the languages you want to audit. The Colour Spinner currently covers six. If either of you speaks one of them natively, include it, and include **OtjiHimba**, spoken by the Himba of northern Namibia, which has just seven indispensable colour terms: *serandu*, for example, covers what English splits into red, pink and orange.
 
 **Backend.** *Colour Spinner API* fetches everything for you. If the network is slow, choose *Copied from the browser* and fill in the sheet in section 4."""),
 
 code("""#@title Your pair's choices { run: "auto" }
 SUBSET = "1, 6, 12, 14"  #@param {type:"string"}
-SOURCE_LANGUAGE = "British English"  #@param ["American English", "British English", "French", "Greek", "Himba", "Spanish"]
+SOURCE_LANGUAGE = "British English"  #@param ["American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]
 American_English = False  #@param {type:"boolean"}
 British_English = True  #@param {type:"boolean"}
 French = False  #@param {type:"boolean"}
 Greek = True  #@param {type:"boolean"}
-Himba = True  #@param {type:"boolean"}
+OtjiHimba = True  #@param {type:"boolean"}
 Spanish = True  #@param {type:"boolean"}
 BACKEND = "Colour Spinner API"  #@param ["Colour Spinner API", "Copied from the browser"]
 
 ticked = {"American English": American_English, "British English": British_English,
-          "French": French, "Greek": Greek, "Himba": Himba, "Spanish": Spanish}
+          "French": French, "Greek": Greek, "OtjiHimba": OtjiHimba, "Spanish": Spanish}
 LANGUAGES = [SOURCE_LANGUAGE] + [l for l, on in ticked.items() if on and l != SOURCE_LANGUAGE]
 PICK = [int(s) for s in re.findall(r"\\d+", SUBSET) if 1 <= int(s) <= 17]
 sub = SDG.loc[PICK]
@@ -58,7 +58,9 @@ md("""## 3 · The perceptual axis: can everyone tell them apart?
 
 About 1 in 12 men and 1 in 200 women of Northern European descent have a colour vision deficiency, most often a reduced ability to separate reds from greens. Independently, the lens of the eye yellows with age and absorbs more short-wavelength light, so blues and greens drift towards one another.
 
-The rows below show the whole palette under each condition, simulated by the Colour Spinner's own models, the same ones you see with its "Simulate age/CVD" menu. The age rows are age bands (16–40, 40–60, 60–80). Look down each column for colours that change, and across each row for colours that merge."""),
+The rows below show the whole palette under each condition, simulated by the Colour Spinner's own models, the same ones you see with its "Simulate age/CVD" menu: protanopia, deuteranopia and tritanopia, and lens yellowing at ages 40, 60 and 80. Look down each column for colours that change, and across each row for colours that merge.
+
+These simulations show how a colour might *appear*, not how people with a colour vision deficiency or an older eye would *name* it: the Spinner's naming models were trained on people with typical colour vision."""),
 
 code("""prefetch_simulations(SDG.hex.tolist())      # ask the Colour Spinner for all 17 colours at once
 show_conditions(SDG.hex.tolist(), labels=[str(i) for i in SDG.index])"""),
@@ -66,7 +68,7 @@ show_conditions(SDG.hex.tolist(), labels=[str(i) for i in SDG.index])"""),
 md("""The chart below makes "merge" measurable. For each colour in your subset it finds the **nearest other SDG colour** under each condition and reports the CIEDE2000 colour difference (ΔE00) between them. A difference of about 1 is just noticeable side by side; for colours that must be told apart at a glance in a chart or a sign, aim for 10 or more. The small number under each value names the nearest neighbour."""),
 
 code("""#@title Nearest-neighbour distinctiveness { run: "auto" }
-DISTINCT_AT = 10  #@param {type:"slider", min:3, max:25, step:1}
+CONFUSABLE_BELOW_DELTA_E = 10  #@param {type:"slider", min:3, max:25, step:1}
 
 def nearest(sdg_id, condition):
     me = simulate(SDG.hex[sdg_id], condition)
@@ -77,23 +79,23 @@ nn = pd.DataFrame({c: {i: nearest(i, c) for i in PICK} for c in CONDITIONS})
 nn_de = nn.map(lambda t: t[0]); nn_id = nn.map(lambda t: t[1])
 
 fig, ax = plt.subplots(figsize=(1.1 * len(CONDITIONS) + 1.6, 0.62 * len(PICK) + 1.4))
-ax.imshow(nn_de.values, cmap=RISK_CMAP, vmin=0, vmax=2 * DISTINCT_AT, aspect="auto")
+ax.imshow(nn_de.values, cmap=RISK_CMAP, vmin=0, vmax=2 * CONFUSABLE_BELOW_DELTA_E, aspect="auto")
 for (r, c), v in np.ndenumerate(nn_de.values):
-    ink = "white" if v < DISTINCT_AT * 0.6 else INK
+    ink = "white" if v < CONFUSABLE_BELOW_DELTA_E * 0.6 else INK
     ax.text(c, r - 0.08, f"{v:.1f}", ha="center", va="center", fontsize=11, fontweight="bold", color=ink)
     ax.text(c, r + 0.27, f"vs {nn_id.values[r, c]}", ha="center", va="center", fontsize=8, color=ink)
 ax.set_xticks(range(len(CONDITIONS)), [condition_label(c) for c in CONDITIONS], rotation=30, ha="right")
 row_chips(ax, [SDG.hex[i] for i in PICK], [f"SDG {i}" for i in PICK])
 ax.tick_params(axis="x", length=0)
 for s in ax.spines.values(): s.set_visible(False)
-ax.set_title(f"Distance to the nearest other SDG colour (ΔE00); red cells fall below {DISTINCT_AT}")
+ax.set_title(f"Distance to the nearest other SDG colour (ΔE00); red cells fall below {CONFUSABLE_BELOW_DELTA_E}")
 plt.tight_layout(); plt.show()
 
 at_risk = {}
 for i in PICK:
     for c in CONDITIONS:
         j, d = nn_id.loc[i, c], nn_de.loc[i, c]
-        if d < DISTINCT_AT:
+        if d < CONFUSABLE_BELOW_DELTA_E:
             at_risk.setdefault(tuple(sorted((i, j))), []).append((c, d))
 if at_risk:
     rows = ""
@@ -101,23 +103,23 @@ if at_risk:
         worst_c = min(hits, key=lambda t: t[1])[0]
         chips = "".join(f'<div class="mini" style="background:{simulate(SDG.hex[k], worst_c)}"></div>' for k in (i, j))
         rows += (f'<tr><td><div class="row">{chips}</div></td><td><b>SDG {i} and {j}</b></td><td>' +
-                 " ".join(f'<span style="white-space:nowrap">{_h(c)} {de_badge(d, DISTINCT_AT, small_is_good=False)}</span>'
+                 " ".join(f'<span style="white-space:nowrap">{_h(c)} {de_badge(d, CONFUSABLE_BELOW_DELTA_E, small_is_good=False)}</span>'
                           for c, d in hits) + "</td></tr>")
     show('<b>Pairs at risk</b>, shown as they look under the condition where they are closest'
          f'<table class="babel">{rows}</table>')
 else:
-    show(f"Every colour in your subset stays at least ΔE00 {DISTINCT_AT} from its nearest neighbour under every condition.")"""),
+    show(f"Every colour in your subset stays at least ΔE00 {CONFUSABLE_BELOW_DELTA_E} from its nearest neighbour under every condition.")"""),
 
 md("""## 4 · The cognitive axis: what are these colours called?
 
-Here you ask the Colour Spinner what speakers of each language actually call your colours. Its data come from thousands of people who named colours online at [colornaming.net](https://colornaming.net). Treat it as a reference baseline rather than ground truth: it currently covers six languages and only the essential colour terms in each, the minimal set that can name every colour.
+Here you ask the Colour Spinner what speakers of each language actually call your colours. Its naming model, Spin Colour Forest, is trained on about 81,000 free colour names from 2,450 speakers, collected online at [colornaming.net](https://colornaming.net) and, for OtjiHimba, in fieldwork in Namibia. Treat it as a reference baseline rather than ground truth: it covers six languages, and in each only the **indispensable vocabulary**, the minimal set of terms needed to name every colour. That ranges from 7 terms in OtjiHimba to 47 in American English (32 in British English, Greek and Spanish; 27 in French).
 
 Two measures come out of this step:
 
-- **Nameability**: the Namer's *confidence*, the share of speakers who would use the top name. Low confidence means people disagree.
-- **Translatability**: whether each language's name points to the same colour. The Mapper's *best example* of each name shows where that name is centred; if the best examples drift apart across languages, a "translation" of the colour lands somewhere else.
+- **Nameability**: the Namer's *confidence*, the probability of its top-ranked name in the model's naming distribution for that colour. High confidence marks the centre of a category, where speakers agree; low confidence marks a contested boundary between categories.
+- **Translatability**: whether each language's name points to the same colour. The Mapper's *best example* of each name, its **focal colour** (the top-left tile), shows where that name is centred; if the focal colours drift apart across languages, a "translation" of the colour lands somewhere else.
 
-**Only if you chose *Copied from the browser*:** fill in the sheet below, one row per colour and language. In the Spinner, type the hex into the Picker, set the Namer to the language, and copy the name, its confidence and the Mapper's best-example RGB. Otherwise skip this cell."""),
+**Only if you chose *Copied from the browser*:** fill in the sheet below, one row per colour and language. In the Spinner, type the hex into the Picker, set the Namer to the language, and copy the name, its confidence and the RGB of the Mapper's best example (the focal colour). Otherwise skip this cell."""),
 
 code("""SHEET = \"\"\"
 hex, language, name, confidence, best_example
@@ -155,7 +157,7 @@ if len(naming):
 
 md("""### Nameability
 
-Each marker is one language. Colours near the right are named consistently; colours on the left are where speakers disagree, and where a label such as "the red goal" will mean different things to different readers."""),
+Each marker is one language. Colours near the right have a confident top name; colours on the left are where the Spinner is less certain what speakers would call them, and where a label such as "the red goal" will mean different things to different readers."""),
 
 code("""MARKERS = dict(zip(SPINNER_LANGUAGES, ["o", "s", "D", "^", "v", "P"]))
 rows = [(i, l) for i in PICK for l in LANGUAGES
@@ -179,8 +181,8 @@ for i in PICK:
 ax.set_yticks(ys, [l for _, l in rows]); ax.tick_params(axis="y", length=0)
 ax.invert_yaxis(); ax.set_xlim(0, 1.18); ax.spines["left"].set_visible(False)
 ax.set_xticks([0, .25, .5, .75, 1]); ax.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(1))
-ax.set_xlabel("Share of speakers who use the top name")
-ax.set_title("Nameability: how much do speakers agree?")
+ax.set_xlabel("Spinner confidence in its top name")
+ax.set_title("Nameability: how confident is the Spinner's top name?")
 plt.tight_layout(); plt.show()"""),
 
 md("""### Translatability
@@ -198,7 +200,7 @@ for i in PICK:
         b = r.best_example.iloc[0]
         cells += (f'<td><div class="pair" style="width:110px"><div style="background:{b};color:{_ink_on(b)}">'
                   f'{_h(r.name.iloc[0])}<br>{b}</div></div><div style="margin-top:3px">'
-                  f'{de_badge(r.drift.iloc[0], DISTINCT_AT)}</div></td>')
+                  f'{de_badge(r.drift.iloc[0], CONFUSABLE_BELOW_DELTA_E)}</div></td>')
     sp = spread(sub_n.best_example.tolist())
     rows += (f'<tr><td><div class="pair" style="width:96px"><div style="background:{SDG.hex[i]};color:{_ink_on(SDG.hex[i])};'
              f'font-weight:700;font-size:13px">SDG {i}</div></div></td>{cells}'
@@ -229,31 +231,32 @@ plt.tight_layout(); plt.show()"""),
 
 md("""## 5 · Two axes, one picture
 
-Each disc is a colour from your subset. Its horizontal position is the **worst case** on the perceptual axis: the smallest nearest-neighbour ΔE00 across all seven viewing conditions. Its vertical position is the **average naming agreement** across your languages."""),
+Each disc is a colour from your subset. Its horizontal position is the **worst case** on the perceptual axis: the smallest nearest-neighbour ΔE00 across all seven viewing conditions. Its vertical position is the **average naming confidence** across your languages: the Spinner's confidence in its top name, averaged over the languages."""),
 
 code("""#@title Scorecard { run: "auto" }
-AGREE_AT = 0.5  #@param {type:"slider", min:0.2, max:0.9, step:0.05}
+HARD_TO_NAME_BELOW_CONFIDENCE = 0.5  #@param {type:"slider", min:0.2, max:0.9, step:0.05}
+#@markdown A colour whose top name has a Spinner confidence below this counts as hard to name.
 
 score = pd.DataFrame({
     "worst_case_dE00": nn_de.min(axis=1),
     "worst_condition": nn_de.idxmin(axis=1),
-    "mean_agreement": naming.groupby("sdg").confidence.mean(),
+    "mean_confidence": naming.groupby("sdg").confidence.mean(),
     "language_spread": naming.groupby("sdg").best_example.apply(lambda s: spread(s.tolist())),
 }).loc[PICK]
 
 fig, ax = plt.subplots(figsize=(7.5, 6))
-xmax = max(2.2 * DISTINCT_AT, score.worst_case_dE00.max() * 1.15)
-ax.axvline(DISTINCT_AT, color="#BDBDB8", ls="--", lw=1); ax.axhline(AGREE_AT, color="#BDBDB8", ls="--", lw=1)
+xmax = max(2.2 * CONFUSABLE_BELOW_DELTA_E, score.worst_case_dE00.max() * 1.15)
+ax.axvline(CONFUSABLE_BELOW_DELTA_E, color="#BDBDB8", ls="--", lw=1); ax.axhline(HARD_TO_NAME_BELOW_CONFIDENCE, color="#BDBDB8", ls="--", lw=1)
 for x, y, t in [(0.02, 0.98, "named, but easily confused"), (0.98, 0.98, "robust on both axes"),
                 (0.02, 0.02, "fragile on both axes"), (0.98, 0.02, "distinct, but hard to name")]:
     ax.text(x, y, t, transform=ax.transAxes, ha="left" if x < .5 else "right",
             va="top" if y > .5 else "bottom", color=MUTED, fontsize=10, style="italic")
 for i, r in score.iterrows():
-    ax.scatter(r.worst_case_dE00, r.mean_agreement, s=900, color=SDG.hex[i], edgecolor="white", lw=2.5, zorder=3)
-    ax.text(r.worst_case_dE00, r.mean_agreement, str(i), ha="center", va="center",
+    ax.scatter(r.worst_case_dE00, r.mean_confidence, s=900, color=SDG.hex[i], edgecolor="white", lw=2.5, zorder=3)
+    ax.text(r.worst_case_dE00, r.mean_confidence, str(i), ha="center", va="center",
             color=_ink_on(SDG.hex[i]), fontweight="bold", zorder=4)
 ax.set_xlim(0, xmax); ax.set_ylim(0, 1); ax.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(1))
-ax.set_xlabel("Perceptual: worst-case ΔE00 to nearest neighbour"); ax.set_ylabel("Cognitive: mean naming agreement")
+ax.set_xlabel("Perceptual: worst-case ΔE00 to nearest neighbour"); ax.set_ylabel("Cognitive: mean naming confidence")
 ax.set_title("Where your colours sit on the two axes")
 plt.tight_layout(); plt.show()
 display(score.round(2))"""),
@@ -269,7 +272,7 @@ Choose in the form below:
 - **Colab's Gemini:** leave the form as it is and run the cells in order.
 - **Your own AI:** choose *Paste the reply from my own AI*. The next cell shows the prompt to copy into your AI tool, and a box to paste its reply into. The reply can be in any reasonable layout: lines, a table or JSON."""),
 
-code("""lang_note = "; ".join(f"{l}" + (" (Otjiherero, spoken by the Himba of Namibia)" if l == "Himba" else "")
+code("""lang_note = "; ".join(f"{l}" + (" (spoken by the Himba of northern Namibia)" if l == "OtjiHimba" else "")
                       for l in LANGUAGES)
 PROMPT_B = f\"\"\"You are helping with a cross-cultural colour naming study.
 For each colour below, give the single colour name that most native speakers of each language would use for it.
@@ -323,7 +326,7 @@ ax.set_xlim(0, 1.1); ax.invert_yaxis(); ax.xaxis.set_major_formatter(mpl.ticker.
 ax.set_title("How often the AI agrees with speakers")
 plt.tight_layout(); plt.show()"""),
 
-md("""A match on a colour with low speaker agreement says little: when only a third of speakers use the top name, other answers are also defensible. So for every name that differs, the last column asks the Spinner's Mapper where the AI's name is centred for speakers of that language. If that colour is close to the SDG colour, the AI chose a plausible neighbouring name. If it is far away, or the name isn't one speakers use at all, the AI's name would mislead them. Large distances on high-agreement colours are the ones to bring to the group.
+md("""A match on a colour with low confidence says little: when the Spinner's confidence in its top name is only around 30%, other names are also defensible. So for every name that differs, the last column asks the Spinner's Mapper where the AI's name is centred for speakers of that language. If that colour is close to the SDG colour, the AI chose a plausible neighbouring name. If it is far away, or the name isn't one speakers use at all, the AI's name would mislead them. Large distances on high-agreement colours are the ones to bring to the group.
 
 ## 7 · Save your results for Part C
 
@@ -350,17 +353,18 @@ def _set(i, src, hidden=None):
 
 _form = "".join(cells[5]["source"]).split("ticked = ")[0]
 _set(5, _form + """ticked = {"American English": American_English, "British English": British_English,
-          "French": French, "Greek": Greek, "Himba": Himba, "Spanish": Spanish}
+          "French": French, "Greek": Greek, "OtjiHimba": OtjiHimba, "Spanish": Spanish}
 LANGUAGES = pick_languages(SOURCE_LANGUAGE, ticked)
 PICK = parse_subset(SUBSET)
 show_subset(PICK, LANGUAGES)""")
 
 _set(9, """#@title Nearest-neighbour distinctiveness { run: "auto" }
-DISTINCT_AT = 10  #@param {type:"slider", min:3, max:25, step:1}
+CONFUSABLE_BELOW_DELTA_E = 10  #@param {type:"slider", min:3, max:25, step:1}
+#@markdown Two colours closer than this CIEDE2000 colour difference count as easily confused. About 1 is just noticeable side by side; 10 is a common rule of thumb for telling colours apart at a glance.
 
 nn_de, nn_id = nearest_neighbours(PICK)      # ΔE00 to the nearest other SDG colour, per condition
-plot_nearest_neighbours(nn_de, nn_id, DISTINCT_AT)
-show_at_risk(nn_de, nn_id, DISTINCT_AT)""")
+plot_nearest_neighbours(nn_de, nn_id, CONFUSABLE_BELOW_DELTA_E)
+show_at_risk(nn_de, nn_id, CONFUSABLE_BELOW_DELTA_E)""")
 
 _set(12, """spinner = connect(BACKEND, SHEET)
 
@@ -369,7 +373,7 @@ for sdg in PICK:
     for language in LANGUAGES:
         colour = SDG.hex[sdg]
         try:
-            namer = spinner.name(colour, language)                  # Namer: top name and agreement
+            namer = spinner.name(colour, language)                  # Namer: top name and its confidence
         except Exception as e:
             problems.append(f"SDG {sdg} in {language}: {e}"); continue
         best = safe(spinner.best_example, namer["name"], language)  # Mapper: where that name is centred
@@ -383,13 +387,14 @@ report_problems(problems)
 show_names_table(naming, LANGUAGES)""")
 
 _set(14, "plot_nameability(naming, PICK, LANGUAGES)")
-_set(16, "show_translatability(naming, PICK, LANGUAGES, DISTINCT_AT)")
+_set(16, "show_translatability(naming, PICK, LANGUAGES, CONFUSABLE_BELOW_DELTA_E)")
 _set(18, "plot_name_map(naming, PICK, LANGUAGES)")
 _set(20, """#@title Scorecard { run: "auto" }
-AGREE_AT = 0.5  #@param {type:"slider", min:0.2, max:0.9, step:0.05}
+HARD_TO_NAME_BELOW_CONFIDENCE = 0.5  #@param {type:"slider", min:0.2, max:0.9, step:0.05}
+#@markdown A colour whose top name has a Spinner confidence below this counts as hard to name.
 
 score = scorecard(nn_de, naming)
-plot_two_axes(score, DISTINCT_AT, AGREE_AT)
+plot_two_axes(score, CONFUSABLE_BELOW_DELTA_E, HARD_TO_NAME_BELOW_CONFIDENCE)
 display(score.round(2))""")
 _set(25, """reply_b = ai_reply(PROMPT_B, AI_PROVIDER, AI_MODEL, AI_BASE_URL, pasted=AI_REPLY)
 ai_names = read_ai_names(reply_b)
@@ -398,7 +403,7 @@ comparison = naming.merge(ai_names, on=["hex", "language"], how="left")
 comparison["agrees"] = [same_name(ai, name, rom)    # any script; ignores case and accents
                         for ai, name, rom in zip(comparison.ai_name, comparison.name, comparison.romanized)]
 comparison = where_ai_names_point(comparison, spinner)   # Mapper: where each differing AI name is centred
-show_name_comparison(comparison, DISTINCT_AT)
+show_name_comparison(comparison, CONFUSABLE_BELOW_DELTA_E)
 plot_agreement_by_language(comparison, LANGUAGES)""")
 
 

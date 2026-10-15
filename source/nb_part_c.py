@@ -6,7 +6,7 @@ cells = [
 md("""# Colour Brings People Together
 ### Part C · Creating an empirically grounded colour palette
 
-In Part B you found what speakers of several languages call a handful of SDG colours. Now reverse the direction. You will give those **names** to an AI system, ask it for the colour each name stands for, and check its answers against where speakers actually centre each name. Where the AI's colour diverges, you replace it with the Colour Spinner's best example, and you finish with a small palette you can defend with evidence.
+In Part B you found what speakers of several languages call a handful of SDG colours. Now reverse the direction. You will give those **names** to an AI system, ask it for the colour each name stands for, and check its answers against where speakers actually centre each name. Where the AI's colour diverges, you replace it with the Colour Spinner's best example, and you finish with a small palette you can defend with evidence. This matters: in the *Colour in Translation* benchmark (Mylonas et al., CHI 2026), a current large language model's colours were on average more than 17 ΔE from speakers' focal colours, because it mapped colour names onto the same prototypes whatever the language.
 
 | Step | You do | Time |
 |---|---|---|
@@ -109,12 +109,12 @@ show_palette(pal.ai_hex.dropna().tolist(), labels=["" for _ in pal.ai_hex.dropna
 
 md("""## 3 · Compare with how speakers actually use each name
 
-For every name, the left half of each swatch is the AI's colour and the right half is the Colour Spinner's best example, the colour speakers most often call by that name. The badge gives the CIEDE2000 difference between them.
+For every name, the left half of each swatch is the AI's colour and the right half is the Colour Spinner's best example: the name's focal colour, the sample where speakers agree most on that name (the Mapper's top-left tile). The badge gives the CIEDE2000 difference between them.
 
 A reminder of scale: about 1 is just noticeable with the two side by side, about 5 is obvious, and above 10 the two are usually read as different colours."""),
 
 code("""#@title Fill in the Spinner's best examples and compare { run: "auto" }
-DIVERGES_AT = 10  #@param {type:"slider", min:3, max:30, step:1}
+REPLACE_ABOVE_DELTA_E = 10  #@param {type:"slider", min:3, max:30, step:1}
 
 need = pal.spinner_hex.isna()
 if need.any():
@@ -128,7 +128,7 @@ pal["de00"] = [de00(a, b) if isinstance(a, str) and isinstance(b, str) else np.n
 pal["de_ucs"] = [de_ucs(a, b) if isinstance(a, str) and isinstance(b, str) else np.nan
                  for a, b in zip(pal.ai_hex, pal.spinner_hex)]
 pal = pal.sort_values(["language", "de00"], ascending=[True, False]).reset_index(drop=True)
-show_pairs(pal, threshold=DIVERGES_AT)"""),
+show_pairs(pal, threshold=REPLACE_ABOVE_DELTA_E)"""),
 
 md("""The map below is the same top-down view of CAM16-UCS colour space used in Part B. Each arrow starts at the AI's colour and ends at the speakers' best example. Long arrows are large errors; arrows that all point the same way for one language suggest a systematic bias, for instance towards English focal colours."""),
 
@@ -157,8 +157,8 @@ y = np.arange(len(order))
 ax.hlines(y, 0, order.de00, color="#CFCFCA", lw=2)
 ax.scatter(order.de00, y, s=150, c=order.spinner_hex.tolist(), edgecolor="white", lw=1.5, zorder=3)
 ax.scatter(np.zeros(len(order)), y, s=60, c=order.ai_hex.tolist(), edgecolor=INK, lw=0.5, zorder=3)
-ax.axvline(DIVERGES_AT, color=INK, ls="--", lw=1)
-ax.text(DIVERGES_AT, len(order) - 0.4, f"  replace above {DIVERGES_AT}", fontsize=9, color=MUTED, va="bottom")
+ax.axvline(REPLACE_ABOVE_DELTA_E, color=INK, ls="--", lw=1)
+ax.text(REPLACE_ABOVE_DELTA_E, len(order) - 0.4, f"  replace above {REPLACE_ABOVE_DELTA_E}", fontsize=9, color=MUTED, va="bottom")
 ax.set_yticks(y, [f"{n}  ({l})" for n, l in zip(order.name, order.language)])
 ax.set_xlabel("ΔE00 between the AI's colour and the best example"); ax.set_xlim(left=-1)
 ax.legend(handles=[mpl.lines.Line2D([], [], marker="o", ls="", color="#BDBDB8", markeredgecolor=INK,
@@ -170,14 +170,14 @@ plt.tight_layout(); plt.show()
 
 summary = ok.groupby("language").agg(names=("name", "size"), mean_dE00=("de00", "mean"),
                                      worst_dE00=("de00", "max"),
-                                     diverging=("de00", lambda d: int((d > DIVERGES_AT).sum())))
+                                     diverging=("de00", lambda d: int((d > REPLACE_ABOVE_DELTA_E).sum())))
 display(summary.reindex([l for l in LANGUAGES if l in summary.index]).round(1))"""),
 
 md("""## 4 · Ground the palette
 
 An AI colour diverges from observed language use if it is too far from the name's best example, or if speakers would call it by a different name. Choose which rule to apply in the form; by default a colour is replaced if either is true. A replaced colour becomes the Colour Spinner's best example of the name. The distance threshold is the slider in section 3."""),
 
-code("""pal["grounded_hex"] = [s if isinstance(s, str) and (pd.isna(d) or d > DIVERGES_AT) else a
+code("""pal["grounded_hex"] = [s if isinstance(s, str) and (pd.isna(d) or d > REPLACE_ABOVE_DELTA_E) else a
                        for a, s, d in zip(pal.ai_hex, pal.spinner_hex, pal.de00)]
 pal["replaced"] = pal.grounded_hex != pal.ai_hex
 
@@ -215,11 +215,11 @@ for lang in LANGUAGES:
 check = pd.DataFrame(check).set_index(["language", "palette"])
 
 fig, ax = plt.subplots(figsize=(1.1 * len(CONDITIONS) + 2.4, 0.5 * len(check) + 1.4))
-ax.imshow(check.values, cmap=RISK_CMAP, vmin=0, vmax=2 * DIVERGES_AT, aspect="auto")
+ax.imshow(check.values, cmap=RISK_CMAP, vmin=0, vmax=2 * REPLACE_ABOVE_DELTA_E, aspect="auto")
 for (r, c), v in np.ndenumerate(check.values):
     if not np.isnan(v):
         ax.text(c, r, f"{v:.1f}", ha="center", va="center", fontsize=10,
-                color="white" if v < 0.7 * DIVERGES_AT else INK)
+                color="white" if v < 0.7 * REPLACE_ABOVE_DELTA_E else INK)
 ax.set_xticks(range(len(CONDITIONS)), [condition_label(c) for c in CONDITIONS], rotation=30, ha="right")
 ax.set_yticks(range(len(check)), [f"{l} · {v}" for l, v in check.index])
 for r in range(2, len(check), 2): ax.axhline(r - 0.5, color="white", lw=3)
@@ -294,7 +294,7 @@ collapse a distinction the language maintains, or produce a colour that fails un
 </div>\"\"\")"""),
 
 md("""---
-*Colour Spinner: Sinkeviciute, Stutters, Ahmed, Koliousis & Mylonas (2026). Benchmark of AI colour naming: Mylonas, Ahmed, Sinkeviciute & Koliousis, CHI 2026. Colour vision deficiency and age simulations from the Colour Spinner. CAM16-UCS after Li et al. (2017).*"""),
+*Colour Spinner: Sinkeviciute, Ahmed, Stutters, Koliousis & Mylonas (2026), under review. Spin Colour Forest and the AI colour-naming benchmark: Mylonas, Ahmed, Sinkeviciute & Koliousis, CHI 2026. Colour vision deficiency and age simulations from the Colour Spinner. Colour science with the colour-science library; CAM16-UCS after Li et al. (2017).*"""),
 ]
 
 
@@ -310,23 +310,28 @@ _set(10, """reply_c = ai_reply(PROMPT_C, AI_PROVIDER, AI_MODEL, AI_BASE_URL, pas
 pal = read_ai_colours(reply_c, names)
 show_ai_palette(pal)""")
 _set(12, """#@title Fill in the Spinner's best examples and compare { run: "auto" }
-DIVERGES_AT = 10  #@param {type:"slider", min:3, max:30, step:1}
+REPLACE_ABOVE_DELTA_E = 10  #@param {type:"slider", min:3, max:30, step:1}
+#@markdown An AI colour further than this CIEDE2000 colour difference from the speakers' best example counts as divergent.
 
 pal = add_best_examples(pal, connect(BACKEND, SHEET))     # looks up only the names that need it
 pal["de00"] = [de00(ai, best) if isinstance(ai, str) and isinstance(best, str) else np.nan
                for ai, best in zip(pal.ai_hex, pal.spinner_hex)]
 pal = pal.sort_values(["language", "de00"], ascending=[True, False]).reset_index(drop=True)
-show_pairs(pal, threshold=DIVERGES_AT)""")
-_set(14, """plot_ai_vs_speakers(pal, LANGUAGES, DIVERGES_AT)
-display(error_summary(pal, LANGUAGES, DIVERGES_AT))""")
-_set(16, """# Keep the AI's colour unless it is more than DIVERGES_AT from the speakers' best example.
-pal["grounded_hex"] = [best if isinstance(best, str) and (pd.isna(d) or d > DIVERGES_AT) else ai
+show_pairs(pal, threshold=REPLACE_ABOVE_DELTA_E)""")
+_set(14, """plot_ai_vs_speakers(pal, LANGUAGES, REPLACE_ABOVE_DELTA_E)
+display(error_summary(pal, LANGUAGES, REPLACE_ABOVE_DELTA_E))""")
+_set(16, """# Keep the AI's colour unless it is more than REPLACE_ABOVE_DELTA_E from the speakers' best example.
+pal["grounded_hex"] = [best if isinstance(best, str) and (pd.isna(d) or d > REPLACE_ABOVE_DELTA_E) else ai
                        for ai, best, d in zip(pal.ai_hex, pal.spinner_hex, pal.de00)]
 pal["replaced"] = pal.grounded_hex != pal.ai_hex
 show_grounded(pal, LANGUAGES)""")
-_set(18, """check = closest_pairs(pal, LANGUAGES)      # smallest ΔE00 within each palette, per condition
-plot_closest_pairs(check, DIVERGES_AT)
-show_grounded_conditions(pal, LANGUAGES)""")
+_set(18, """#@title Can every viewer tell the colours apart? { run: "auto" }
+CONFUSABLE_BELOW_DELTA_E = 10  #@param {type:"slider", min:3, max:25, step:1}
+#@markdown Two colours closer than this CIEDE2000 colour difference count as easily confused, as in Part B.
+
+check = closest_pairs(pal, LANGUAGES)      # smallest ΔE00 within each palette, per condition
+plot_closest_pairs(check, CONFUSABLE_BELOW_DELTA_E)
+show_grounded_conditions(pal, LANGUAGES)""", hidden=False)
 _set(20, "export_palette(pal, LANGUAGES)")
 _set(22, """#@title Finding to share { run: "auto" }
 PICK_NAME = ""  #@param {type:"string"}
@@ -352,7 +357,7 @@ _g = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and 'pal["g
 cells[_g] = code("""#@title Ground the palette { run: "auto" }
 REPLACE_WHEN = "Either"  #@param ["Either", "Too far from the best example", "Speakers would use a different name"]
 
-too_far = [pd.isna(d) or d > DIVERGES_AT for d in pal.de00]
+too_far = [pd.isna(d) or d > REPLACE_ABOVE_DELTA_E for d in pal.de00]
 renamed = [isinstance(n, str) and not same_name(n, m, r)
            for n, m, r in zip(pal.rt_name, pal.name, pal.get("romanized", pd.Series(None, index=pal.index)))]
 rule = {"Either": [a or b for a, b in zip(too_far, renamed)],

@@ -127,8 +127,8 @@ def plot_nameability(naming, pick, languages):
     ax.set_yticks(ys, [l for _, l in rows]); ax.tick_params(axis="y", length=0)
     ax.invert_yaxis(); ax.set_xlim(0, 1.18); ax.spines["left"].set_visible(False)
     ax.set_xticks([0, .25, .5, .75, 1]); ax.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(1))
-    ax.set_xlabel("Share of speakers who use the top name")
-    ax.set_title("Nameability: how much do speakers agree?")
+    ax.set_xlabel("Spinner confidence in its top name")
+    ax.set_title("Nameability: how confident is the Spinner's top name?")
     plt.tight_layout(); plt.show()
 
 def show_translatability(naming, pick, languages, threshold):
@@ -171,12 +171,12 @@ def plot_name_map(naming, pick, languages):
 
 # ── Part B: two axes ──────────────────────────────────────────────────────
 def scorecard(nn_de, naming):
-    """One row per colour: worst-case perceptual distance and mean naming agreement."""
+    """One row per colour: worst-case perceptual distance and mean naming confidence."""
     pick = list(nn_de.index) if nn_de is not None else list(dict.fromkeys(naming.sdg))
     return pd.DataFrame({
         "worst_case_dE00": nn_de.min(axis=1) if nn_de is not None else pd.Series(np.nan, index=pick),
         "worst_condition": nn_de.idxmin(axis=1) if nn_de is not None else pd.Series(None, index=pick),
-        "mean_agreement": naming.groupby("sdg").confidence.mean(),
+        "mean_confidence": naming.groupby("sdg").confidence.mean(),
         "language_spread": naming.groupby("sdg").best_example.apply(lambda s: spread(s.tolist())),
     }).loc[pick]
 
@@ -193,11 +193,11 @@ def plot_two_axes(score, distinct_at, agree_at):
         ax.text(x, y, t, transform=ax.transAxes, ha="left" if x < .5 else "right",
                 va="top" if y > .5 else "bottom", color=MUTED, fontsize=10, style="italic")
     for i, r in score.iterrows():
-        ax.scatter(r.worst_case_dE00, r.mean_agreement, s=900, color=SDG.hex[i], edgecolor="white", lw=2.5, zorder=3)
-        ax.text(r.worst_case_dE00, r.mean_agreement, str(i), ha="center", va="center",
+        ax.scatter(r.worst_case_dE00, r.mean_confidence, s=900, color=SDG.hex[i], edgecolor="white", lw=2.5, zorder=3)
+        ax.text(r.worst_case_dE00, r.mean_confidence, str(i), ha="center", va="center",
                 color=ink_on(SDG.hex[i]), fontweight="bold", zorder=4)
     ax.set_xlim(0, xmax); ax.set_ylim(0, 1); ax.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(1))
-    ax.set_xlabel("Perceptual: worst-case ΔE00 to nearest neighbour"); ax.set_ylabel("Cognitive: mean naming agreement")
+    ax.set_xlabel("Perceptual: worst-case ΔE00 to nearest neighbour"); ax.set_ylabel("Cognitive: mean naming confidence")
     ax.set_title("Where your colours sit on the two axes")
     plt.tight_layout(); plt.show()
 
@@ -277,6 +277,7 @@ def read_ai_names(reply):
     if t.empty:
         raise ValueError("Couldn't find any 'colour | language | name' lines in the reply.")
     t["hex"] = t["hex"].map(parse_colour)
+    t["language"] = t["language"].map(canonical_language)
     t["name"] = t["name"].astype(str).str.strip().str.strip('"')
     return t.rename(columns={"name": "ai_name"})[["hex", "language", "ai_name"]]
 
@@ -357,6 +358,7 @@ def load_names(source, typed=""):
     else:
         names = read_sheet(typed).assign(sdg=np.nan, sdg_hex=None, spinner_hex=None)[
             ["sdg", "sdg_hex", "language", "name", "spinner_hex"]]
+    names["language"] = names["language"].map(canonical_language)
     return names.reset_index(drop=True)
 
 def plain_with_roman(r):
@@ -390,6 +392,7 @@ def read_ai_colours(reply, names):
         return None
     ai["ai_hex"] = [colour_of(r) for _, r in ai.iterrows()]
     ai = ai[ai.ai_hex.notna()].copy()
+    ai["language"] = ai["language"].map(canonical_language)
     if ai.empty:
         raise ValueError("Couldn't find any 'language | name | colour' lines in the reply.")
     pal = names.copy()
@@ -438,7 +441,7 @@ def show_round_trip(pal):
                  f'<td>{said}</td><td>{badge}</td></tr>')
     show('<table class="babel"><tr><th>Language</th><th>Name given to the AI</th><th>AI\'s colour</th>'
          f'<th>What speakers call that colour (Spinner)</th><th></th></tr>{rows}</table>'
-         '<div class="note">The percentage is the share of speakers who use that name for the AI\'s colour.</div>')
+         '<div class="note">The percentage is the Spinner\'s confidence in that name for the AI\'s colour.</div>')
 
 
 # ── Part C: comparing ─────────────────────────────────────────────────────
@@ -575,7 +578,7 @@ def show_finding(pal, name=""):
     rt_line = ""
     if isinstance(row.get("rt_name"), str):
         rt_line = (f'<p style="margin:0 0 10px">Speakers would call the AI\'s colour '
-                   f'<b>{esc(row.rt_name)}</b> ({row.rt_conf:.0%} agreement).</p>')
+                   f'<b>{esc(row.rt_name)}</b> ({row.rt_conf:.0%} confidence).</p>')
     show(f"""<div class="card">
 <h3>“{esc(row['name'])}” in {esc(row.language)}</h3>
 <div style="display:flex;gap:10px;margin:12px 0;background:{SURROUND};padding:12px;border-radius:6px">
