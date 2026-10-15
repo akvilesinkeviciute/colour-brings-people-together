@@ -477,6 +477,36 @@ def try_call(fn, *a, **k):
 # ════════════════════════════════════════════════════════════════════════
 COLAB_AI = "Gemini built into Colab"
 
+COLAB_MAX_TOKENS = 2048     # the answers are short; a small limit keeps each request within Colab's free quota
+
+def _colab_generate(ai, prompt, model=""):
+    """Ask Colab's built-in AI with a small output limit. If the quota still refuses, try the
+    cheapest model Colab lists (a 'lite' or Gemma model) before giving up."""
+    def call(name):
+        kw = {"model_name": name} if name else {}
+        for limit in ({"max_output_tokens": COLAB_MAX_TOKENS}, {"max_tokens": COLAB_MAX_TOKENS}, {}):
+            try:
+                return ai.generate_text(prompt, **kw, **limit)
+            except TypeError:            # this version of the library doesn't take that argument
+                continue
+        return ai.generate_text(prompt, **kw)
+    try:
+        return call(model)
+    except Exception as first:
+        quota = any(k in str(first).lower() for k in ("quota", "cost", "403", "429", "rate"))
+        if quota and not model:
+            try:
+                names = [str(m) for m in ai.list_models()]
+                cheap = next((n for k in ("lite", "gemma", "flash") for n in names if k in n.lower()), None)
+                if cheap:
+                    return call(cheap)
+            except Exception:
+                pass
+        raise RuntimeError(
+            "Colab's built-in Gemini couldn't answer: its free usage limit has been reached for now. "
+            "Choose 'Paste answers from my own AI' in the form, copy the prompt into any AI and paste "
+            f"its answers into the boxes. (Details: {str(first)[:160]})") from first
+
 def ask_ai(prompt, provider=COLAB_AI, model="", base_url=""):
     """Send `prompt` to an AI system.
     provider: COLAB_AI uses google.colab.ai, free in Colab with no key;
@@ -497,12 +527,8 @@ def ask_ai(prompt, provider=COLAB_AI, model="", base_url=""):
             from google.colab import ai
         except ImportError:
             raise RuntimeError("Colab's built-in Gemini only works inside Google Colab. "
-                               "Choose another provider, or paste the reply yourself.")
-        try:
-            return ai.generate_text(prompt, model_name=model) if model else ai.generate_text(prompt)
-        except Exception as e:
-            raise RuntimeError(f"Colab's built-in Gemini did not answer ({e}). Wait a minute and run "
-                               "the cell again, or paste the reply yourself.") from e
+                               "Choose 'Paste answers from my own AI' in the form instead.")
+        return _colab_generate(ai, prompt, model)
     if provider == "Anthropic":
         r = requests.post("https://api.anthropic.com/v1/messages", timeout=120, headers={
                 "x-api-key": secret("ANTHROPIC_API_KEY"),
@@ -618,7 +644,7 @@ def show_babel(table, languages):
             else:
                 cells += f'<td style="color:{MUTED}">—</td>'
         body += (f'<tr><td><div class="pair" style="width:96px"><div style="background:{r.hex};'
-                 f'color:{_ink_on(r.hex)};font-weight:700;font-size:13px">SDG {r.name}</div></div></td>{cells}</tr>')
+                 f'color:{_ink_on(r.hex)};font-weight:700;font-size:15px">{r.name}</div></div></td>{cells}</tr>')
     show(f'<table class="babel">{head}{body}</table>')
 
 _GOOD, _MID, _BAD = ("#DDEFE3", "#14532D"), ("#FBF0D0", "#6B4E00"), ("#F9DADA", "#7F1D1D")
@@ -677,20 +703,27 @@ mpl.rcParams.update({
 RISK_CMAP = mpl.colors.LinearSegmentedColormap.from_list(
     "risk", [(0, "#8E1B1B"), (0.4999, "#E7B3A3"), (0.5, "#E3E8DF"), (1, PAPER)])
 
-def chip(ax, y, hex_, label, height=0.72, gap_in=0.12, width_in=0.66, radius_in=0.07):
-    """A rounded colour chip with its label, drawn just left of the plot area at data height y.
-    The same chip is used on every chart, so test colours look the same everywhere."""
+def chip(ax, y, hex_, label, height=0.72, gap_in=0.12, width_in=1.0, frame_in=0.06, radius_in=0.06, height_in=None):
+    """A test-colour chip drawn just left of the plot area at data height y, styled like the
+    framed swatches in the tables: a grey frame, the colour inside, its number bottom-left."""
     fig = ax.figure
     pos = ax.get_position()
     ax_w_in, ax_h_in = pos.width * fig.get_figwidth(), pos.height * fig.get_figheight()
     y_per_in = abs(np.diff(ax.get_ylim())[0]) / ax_h_in
-    w, g = width_in / ax_w_in, gap_in / ax_w_in
     blend = mpl.transforms.blended_transform_factory(ax.transAxes, ax.transData)
-    ax.add_patch(mpl.patches.FancyBboxPatch((-g - w, y - height / 2), w, height,
-                 boxstyle=f"round,pad=0,rounding_size={radius_in / ax_w_in}",
-                 mutation_aspect=y_per_in * ax_w_in, color=hex_, transform=blend, clip_on=False))
-    ax.text(-g - w / 2, y, label, transform=blend, ha="center", va="center", color=_ink_on(hex_),
-            fontsize=10, fontweight="bold", clip_on=False)
+    aspect = y_per_in * ax_w_in
+    if height_in is not None:                 # a fixed size in inches, like the swatches in the tables
+        height = height_in * y_per_in
+    def box(x_in, w_in, h_data, colour, r_in):
+        ax.add_patch(mpl.patches.FancyBboxPatch((x_in / ax_w_in, y - h_data / 2), w_in / ax_w_in, h_data,
+                     boxstyle=f"round,pad=0,rounding_size={r_in / ax_w_in}", mutation_aspect=aspect,
+                     color=colour, transform=blend, clip_on=False))
+    x0 = -(gap_in + width_in)
+    box(x0, width_in, height, SURROUND, radius_in)                                   # grey frame
+    box(x0 + frame_in, width_in - 2 * frame_in, height - 2 * frame_in * y_per_in, hex_, radius_in / 3)
+    ax.text((x0 + frame_in + 0.07) / ax_w_in, y + height / 2 - frame_in * y_per_in - 0.06 * y_per_in, label,
+            transform=blend, ha="left", va="bottom", color=_ink_on(hex_), fontsize=12, fontweight="bold",
+            clip_on=False)
 
 def row_chips(ax, hexes, labels):
     """Replace y tick labels with colour chips carrying the label."""
@@ -739,7 +772,7 @@ def pick_languages(source, ticked):
 
 def show_subset(pick, languages):
     sub = SDG.loc[pick]
-    show_palette(sub.hex.tolist(), labels=[f"SDG {i}" for i in sub.index], captions=sub.goal.tolist(),
+    show_palette(sub.hex.tolist(), labels=[str(i) for i in sub.index], captions=sub.goal.tolist(),
                  note=f"Auditing {len(pick)} colours in {len(languages)} languages: {', '.join(languages)}.")
 
 
@@ -768,7 +801,7 @@ def _cell_grid(values, threshold, row_labels, title, subtitle, row_chip_colours=
     """A grid of rounded cells: one row per test colour (or palette), one column per viewing condition."""
     nr, nc = values.shape
     cols = list(values.columns)
-    W, H = 1.3 * nc + (1.3 if row_chip_colours else 2.4), 0.8 * nr + 1.6
+    W, H = 1.3 * nc + (1.6 if row_chip_colours else 2.4), 0.8 * nr + 1.6
     fig, ax = plt.subplots(figsize=(W, H))
     for r in range(nr):
         for c in range(nc):
@@ -783,7 +816,7 @@ def _cell_grid(values, threshold, row_labels, title, subtitle, row_chip_colours=
             if neighbours is not None:
                 n = neighbours.iat[r, c]
                 ax.add_patch(mpl.patches.Rectangle((c - 0.30, r + 0.13), 0.13, 0.15, fc=SDG.hex[n], ec="white", lw=0.8))
-                ax.text(c - 0.12, r + 0.205, f"vs SDG {n}", ha="left", va="center", fontsize=8.5, color=ink)
+                ax.text(c - 0.12, r + 0.205, f"vs {n}", ha="left", va="center", fontsize=8.5, color=ink)
     for c, name in enumerate(cols):
         ax.text(c, -0.68, condition_label(name), ha="center", va="center", fontsize=10, color=INK)
     ax.set_xlim(-0.5, nc - 0.5); ax.set_ylim(nr - 0.5, -0.95)
@@ -798,16 +831,16 @@ def _cell_grid(values, threshold, row_labels, title, subtitle, row_chip_colours=
                 ha="left", va="bottom", fontsize=9.5, color=MUTED)
     fig.tight_layout()
     if row_chip_colours:
-        fig.subplots_adjust(left=max(fig.subplotpars.left, 1.0 / W))
+        fig.subplots_adjust(left=max(fig.subplotpars.left, 1.3 / W))
         for r, (h, l) in enumerate(zip(row_chip_colours, row_labels)):
-            chip(ax, r, h, l, height=0.80)
+            chip(ax, r, h, l, height_in=0.62)
     plt.show()
 
 def plot_nearest_neighbours(nn_de, nn_id, threshold):
     if nn_de is None: return
     pick = list(nn_de.index)
     below = int((nn_de.values < threshold).sum())
-    _cell_grid(nn_de, threshold, [f"SDG {i}" for i in pick],
+    _cell_grid(nn_de, threshold, [str(i) for i in pick],
                "How close is each test colour to its nearest SDG neighbour?",
                f"ΔE00 to the nearest other SDG colour under each condition. Red: closer than {threshold}, "
                f"so easily confused ({below} of {nn_de.size} cells).",
@@ -829,7 +862,7 @@ def show_at_risk(nn_de, nn_id, threshold):
     for (i, j), hits in sorted(at_risk.items(), key=lambda kv: min(d for _, d in kv[1])):
         worst = min(hits, key=lambda t: t[1])[0]
         chips = "".join(f'<div class="mini" style="background:{simulate(SDG.hex[k], worst)}"></div>' for k in (i, j))
-        rows += (f'<tr><td><div class="row">{chips}</div></td><td><b>SDG {i} and {j}</b></td><td>' +
+        rows += (f'<tr><td><div class="row">{chips}</div></td><td><b>{i} and {j}</b></td><td>' +
                  " ".join(f'<span style="white-space:nowrap">{esc(c)} {de_badge(d, threshold, small_is_good=False)}</span>'
                           for c, d in hits) + "</td></tr>")
     show('<b>Pairs at risk</b>, shown as they look under the condition where they are closest'
@@ -867,7 +900,7 @@ def sheet_boxes(pick, languages):
             conf = w.Text(placeholder="e.g. 36", layout=lay(100))
             best = w.Text(placeholder="e.g. 232 21 56", layout=lay(200))
             rows.append((SDG.hex[i], lang, name, conf, best))
-            items.append(w.HBox([w.HTML(_swatch_html(SDG.hex[i], f"<b>SDG {i}</b> {SDG.hex[i]} · {_h(lang)}"), layout=lay(300)),
+            items.append(w.HBox([w.HTML(_swatch_html(SDG.hex[i], f"<b>{i}</b> {SDG.hex[i]} · {_h(lang)}"), layout=lay(300)),
                                  name, conf, best]))
     _SHEET["rows"] = rows
     display(w.VBox(items))
@@ -937,14 +970,13 @@ def plot_nameability(naming, pick, languages):
     for i in pick:
         g = [y for y, (j, _) in zip(ys, rows) if j == i]
         if g:
-            chip(ax, (min(g) + max(g)) / 2, SDG.hex[i], f"SDG {i}",
-                 height=max(g) - min(g) + 0.72, gap_in=1.45)
+            chip(ax, (min(g) + max(g)) / 2, SDG.hex[i], str(i), height_in=0.62, gap_in=1.45)
     ax.set_yticks(ys, [l for _, l in rows]); ax.tick_params(axis="y", length=0)
     ax.invert_yaxis(); ax.set_xlim(0, 1.18); ax.spines["left"].set_visible(False)
     ax.set_xticks([0, .25, .5, .75, 1]); ax.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(1))
     ax.set_xlabel("Spinner confidence in its top name")
     ax.set_title("Nameability: how confident is the Spinner's top name?")
-    plt.tight_layout(); fig.subplots_adjust(left=0.30); plt.show()
+    plt.tight_layout(); fig.subplots_adjust(left=0.33); plt.show()
 
 def show_translatability(naming, pick, languages, threshold, source=None):
     """Source language first: its focal colour vs the test colour. Then each target language:
@@ -954,7 +986,8 @@ def show_translatability(naming, pick, languages, threshold, source=None):
              "Tick it there, or choose another source language.")
         return
     order = ([source] + [l for l in languages if l != source]) if source else list(languages)
-    td = 'style="width:132px;padding:4px 10px 4px 0"'
+    W = 160                                         # every language column has the same width
+    cell = f'style="width:{W}px;vertical-align:top;padding:0 0 18px 0"'
     rows = ""
     for i in pick:
         sub = naming[naming.sdg == i]
@@ -964,30 +997,30 @@ def show_translatability(naming, pick, languages, threshold, source=None):
         for k, lang in enumerate(order):
             r = sub[sub.language == lang]
             if lang not in best:
-                cells += f'<td {td}><span style="color:{MUTED}">—</span></td>'
-            else:
-                b = best[lang]
-                ref = SDG.hex[i] if (k == 0 or not source or source not in best) else best[source]
-                cells += (f'<td {td}><div class="pair" style="width:118px"><div style="background:{b};color:{ink_on(b)}">'
-                          f'{esc(r.name.iloc[0])}<br>{b}</div></div><div style="margin-top:3px">'
-                          f'{de_badge(de00(ref, b), threshold)}</div></td>')
-            if k == 0 and source:
-                cells += '<td style="width:28px"></td>'
+                cells += f'<td {cell}><span style="color:{MUTED}">—</span></td>'
+                continue
+            b = best[lang]
+            ref = SDG.hex[i] if (k == 0 or not source or source not in best) else best[source]
+            cells += (f'<td {cell}><div class="pair" style="width:{W - 22}px"><div style="background:{b};color:{ink_on(b)}">'
+                      f'{esc(r.name.iloc[0])}<br>{b}</div></div><div style="margin-top:4px">'
+                      f'{de_badge(de00(ref, b), threshold)}</div></td>')
         sp = spread(list(best.values()))
-        rows += (f'<tr><td style="width:110px"><div class="pair" style="width:96px"><div style="background:{SDG.hex[i]};'
-                 f'color:{ink_on(SDG.hex[i])};font-weight:700;font-size:13px">SDG {i}</div></div></td>'
-                 f'<td style="width:36px"></td>{cells}'
-                 f'<td style="color:{MUTED};white-space:nowrap">{"" if pd.isna(sp) else "spread " + format(sp, ".1f")}</td></tr>')
-    heads = ""
-    for k, l in enumerate(order):
-        tag = " (source)" if (k == 0 and source) else (" (target)" if source else "")
-        heads += f'<th {td}>{esc(l)}{tag}</th>' + ('<th></th>' if (k == 0 and source) else "")
+        rows += (f'<tr><td style="width:120px;vertical-align:top;padding:0 0 18px 0">'
+                 f'<div class="pair" style="width:96px"><div style="background:{SDG.hex[i]};'
+                 f'color:{ink_on(SDG.hex[i])};font-weight:700;font-size:15px">{i}</div></div></td>'
+                 f'<td style="width:28px"></td>{cells}'
+                 f'<td style="vertical-align:top;padding-top:20px;color:{MUTED};white-space:nowrap">'
+                 f'{"" if pd.isna(sp) else "spread " + format(sp, ".1f")}</td></tr>')
+    heads = "".join(f'<th style="width:{W}px;text-align:left;padding:0 0 8px 0;font-weight:400;font-size:12px;white-space:nowrap;color:{MUTED}">'
+                    f'{esc(l)}{(" (source)" if k == 0 else " (target)") if source else ""}</th>'
+                    for k, l in enumerate(order))
     note = ("Source column: ΔE00 between the test colour and the source name's best example (focal colour). "
             "Target columns: ΔE00 between each target name's focal colour and the source's. " if source else
             "Badges: ΔE00 between the test colour and each language's best example (focal colour). ")
-    show('<table class="babel" style="table-layout:fixed"><tr><th>Test colour</th><th></th>' + heads +
-         f'<th></th></tr>{rows}</table><div class="note">{note}'
-         "Spread: the largest ΔE00 between any two languages' focal colours.</div>")
+    show('<table style="table-layout:fixed;border-collapse:collapse">'
+         f'<tr><th style="width:120px;text-align:left;padding:0 0 8px 0;font-weight:400;font-size:12px;color:{MUTED}">Test colour</th>'
+         f'<th style="width:28px"></th>{heads}<th></th></tr>{rows}</table>'
+         f'<div class="note">{note}Spread: the largest ΔE00 between any two languages\' focal colours.</div>')
 
 def plot_name_map(naming, pick, languages):
     fig, ax = plt.subplots(figsize=(7, 7)); _ucs_axes(ax)
@@ -1032,7 +1065,13 @@ def scorecard(pick, naming, language=ALL_LANGUAGES, condition="Typical", normali
         lo, hi = 0.0, de.max()
     conf = naming.pivot(index="sdg", columns="language", values="confidence")
     names = naming.pivot(index="sdg", columns="language", values="name")
-    y = conf.mean(axis=1) if language == ALL_LANGUAGES else conf.get(language, pd.Series(np.nan, index=conf.index))
+    if language != ALL_LANGUAGES and language not in conf.columns:
+        show(f'<div class="card"><b>{esc(language)} isn\'t one of the languages you audited</b>'
+             f'<p style="margin:6px 0 0">Showing the average of your languages instead. To see {esc(language)}, '
+             f'tick it in section 2 and run sections 2 and 4 again. Your languages: '
+             f'{esc(", ".join(conf.columns))}.</p></div>')
+        language = ALL_LANGUAGES
+    y = conf.mean(axis=1) if language == ALL_LANGUAGES else conf[language]
     card = pd.DataFrame({"dE00": de, "perceptual_0to1": (de - lo) / (hi - lo) if hi > lo else 1.0,
                          "confidence_0to1": y.reindex(pick)}, index=pick)
     for l in conf.columns:
@@ -1083,7 +1122,7 @@ def show_scorecard(card):
     for i, r in card.iterrows():
         conf = "" if pd.isna(r.confidence_0to1) else f"{r.confidence_0to1:.2f}"
         body += (f'<tr><td><div class="pair" style="width:96px;height:40px"><div style="background:{SDG.hex[i]};'
-                 f'color:{ink_on(SDG.hex[i])};font-weight:700;font-size:12px">SDG {i}</div></div></td>'
+                 f'color:{ink_on(SDG.hex[i])};font-weight:700;font-size:15px">{i}</div></div></td>'
                  f"<td>{r.dE00:.1f}</td><td>{r.perceptual_0to1:.2f}</td><td><b>{conf}</b></td>" +
                  "".join(f"<td>{esc(r[l])}</td>" for l in langs) + "</tr>")
     show(f'<table class="babel">{head}{body}</table>'
@@ -1095,55 +1134,151 @@ def show_scorecard(card):
 PASTE = "Paste answers from my own AI"
 _ANS = {"boxes": [], "rows": None, "kind": None}
 
+def numbered_items(rows, kind):
+    """The numbered list shared by the prompt and the boxes.
+    kind='name': one number per test colour ('1. #E5243B'); kind='colour': one per name."""
+    rows = rows.reset_index(drop=True)
+    if kind == "name":
+        colours = rows.drop_duplicates("hex")
+        return [f"{int(r.sdg)}. {r.hex}" for _, r in colours.iterrows()]   # numbered by SDG goal
+    return [f"{n}. {r.language}: {plain_with_roman(r)}" for n, (_, r) in enumerate(rows.iterrows(), 1)]
+
 def answer_boxes(rows, kind):
-    """One box per answer. kind='name': rows have hex and language, and you type the AI's name.
-    kind='colour': rows have language and name, and you type the AI's colour code."""
+    """kind='name': one numbered row per test colour, with its swatch and hex code filled in and one box
+    per language. kind='colour': one numbered box per name."""
     try:
         import ipywidgets as w
     except ImportError:
         print("Answer boxes need ipywidgets, which Colab includes.")
         return
     rows = rows.reset_index(drop=True)
-    items, boxes = [], []
-    for _, r in rows.iterrows():
-        if kind == "name":
-            left = (f'<span style="display:inline-block;width:34px;height:22px;border-radius:3px;'
-                    f'vertical-align:middle;background:{r.hex}"></span>&nbsp; <b>{r.hex}</b> · {_h(r.language)}')
-            hint = "name your AI gave"
-        else:
-            left = f'{_h(r.language)}: <b>{_h(plain_with_roman(r))}</b>'
-            hint = "#RRGGBB your AI gave"
-        box = w.Text(placeholder=hint, layout=w.Layout(width="280px"))
-        boxes.append(box)
-        items.append(w.HBox([w.HTML(left, layout=w.Layout(width="320px")), box]))
+    lay = lambda px, **k: w.Layout(width=f"{px}px", **k)
+    items, boxes = [], {}
+    if kind == "name":
+        colours = rows.drop_duplicates("hex")
+        langs = list(dict.fromkeys(rows.language))
+        items.append(w.HBox([w.HTML("", layout=lay(34)), w.HTML("<b>Test colour</b>", layout=lay(190))] +
+                            [w.HTML(f"<b>{_h(l)}</b>", layout=lay(170)) for l in langs]))
+        for _, r in colours.iterrows():
+            n = int(r.sdg)
+            swatch = (f'<span style="display:inline-block;width:34px;height:22px;border-radius:3px;vertical-align:middle;'
+                      f'background:{r.hex};box-shadow:0 0 0 3px {SURROUND}"></span>&nbsp;&nbsp; {r.hex}')
+            row = [w.HTML(f'<b style="font-size:15px">{n}</b>', layout=lay(34)), w.HTML(swatch, layout=lay(190))]
+            for l in langs:
+                box = w.Text(placeholder=f"name in {l}", layout=lay(160))
+                boxes[(r.hex, l)] = box
+                row.append(box)
+            items.append(w.HBox(row))
+    else:
+        for n, (_, r) in enumerate(rows.iterrows(), 1):
+            box = w.Text(placeholder="paste the colour code, e.g. #E5243B", layout=lay(300))
+            boxes[n] = box
+            items.append(w.HBox([w.HTML(f'<b style="font-size:15px">{n}</b>', layout=lay(34)), box,
+                                 w.HTML(f'<span style="color:{MUTED}">{_h(r.language)}: {_h(r["name"])}</span>',
+                                        layout=lay(260, margin="0 0 0 10px"))]))
     _ANS.update(boxes=boxes, rows=rows, kind=kind)
     display(w.VBox(items))
 
-def collected_answers():
-    """What was typed into the answer boxes, as a table."""
-    rows, kind = _ANS["rows"], _ANS["kind"]
-    if rows is None:
-        raise ValueError("Run the cell above first: it shows the boxes to fill in.")
-    values = [b.value.strip() for b in _ANS["boxes"]]
-    if not any(values):
-        raise ValueError("The boxes are empty: copy your AI's answers into them, then run this cell again.")
-    t = rows.copy()
+def _answers_table(values, rows, kind):
+    """values: {(hex, language): name} for kind 'name'; [colour code, …] in order for kind 'colour'."""
+    t = rows.reset_index(drop=True).copy()
     if kind == "name":
-        t["ai_name"] = [v or None for v in values]
+        t["ai_name"] = [values.get((h, l)) or None for h, l in zip(t.hex, t.language)]
         return t[["hex", "language", "ai_name"]]
     t["ai_hex"] = [parse_colour(v) if v and (_HEX.search(v) or len(re.findall(r"\d+", v)) == 3) else None
                    for v in values]
     return t[["language", "name", "ai_hex"]]
 
+def collected_answers():
+    """What was typed into the boxes, as a table."""
+    rows, kind, boxes = _ANS["rows"], _ANS["kind"], _ANS["boxes"]
+    if rows is None:
+        raise ValueError("Run the cell above first: it shows the boxes to fill in.")
+    if kind == "name":
+        values = {k: b.value.strip() for k, b in boxes.items()}
+        filled = any(values.values())
+    else:
+        values = [boxes[n].value.strip() for n in sorted(boxes)]
+        filled = any(values)
+    if not filled:
+        raise ValueError("The boxes are empty: paste your AI's answers into them, then run this cell again.")
+    return _answers_table(values, rows, kind)
+
+def answers_from_reply(reply, rows, kind):
+    """Read a numbered reply into the same table as the boxes.
+    kind='name': '1. British English: Red | Greek: Κόκκινο | …'; kind='colour': '1. #E5243B'."""
+    found = {}
+    for line in re.sub(r"```\w*", "", reply).splitlines():
+        m = re.match(r"\s*\**\s*(\d+)\s*[.):\-]\s*(.+?)\s*$", line)
+        if m:
+            found.setdefault(int(m.group(1)), m.group(2).strip())
+    if not found:
+        raise ValueError("Couldn't find numbered answers ('1. …') in the AI's reply.")
+    rows = rows.reset_index(drop=True)
+    clean = lambda v: re.sub(r"[*_`]", "", v).strip().strip('"').strip()
+    if kind == "colour":
+        return _answers_table([clean(found.get(n, "")) for n in range(1, len(rows) + 1)], rows, kind)
+    colours = rows.drop_duplicates("hex")
+    langs = list(dict.fromkeys(rows.language))
+    values = {}
+    for n, hex_ in zip(colours.sdg.astype(int), colours.hex):
+        parts = [p for p in re.split(r"\s*[|;]\s*", found.get(n, "")) if p.strip()]
+        for k, part in enumerate(parts):
+            if ":" in part:
+                lang, name = part.split(":", 1)
+                lang = next((l for l in langs if norm(l) == norm(canonical_language(clean(lang)))), None)
+            else:
+                lang, name = (langs[k] if k < len(langs) else None), part
+            if lang:
+                values[(hex_, lang)] = clean(name)
+    return _answers_table(values, rows, kind)
+
+def prompt_box(prompt):
+    """The prompt in a read-only box, with a Copy button and buttons that open ChatGPT or Claude
+    with the prompt already typed in."""
+    from urllib.parse import quote
+    import uuid
+    uid = "p" + uuid.uuid4().hex[:8]
+    q = quote(prompt)
+    btn = ("display:inline-block;padding:7px 14px;margin:8px 8px 0 0;border-radius:6px;font-weight:700;"
+           "font-size:13px;text-decoration:none;cursor:pointer;border:1px solid #1F1F1F;")
+    show(f"""
+<textarea id="{uid}" readonly rows="{min(22, prompt.count(chr(10)) + 2)}"
+  style="width:100%;max-width:820px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.45;
+         padding:10px;border:1px solid #CFCFCA;border-radius:6px;background:#FFFFFF;color:{INK}">{_h(prompt)}</textarea>
+<div>
+  <button id="{uid}b" style="{btn}background:{INK};color:#FFFFFF">Copy prompt</button>
+  <a href="https://chatgpt.com/?q={q}" target="_blank" rel="noopener" style="{btn}background:#FFFFFF;color:{INK}">Open in ChatGPT ↗</a>
+  <a href="https://claude.ai/new?q={q}" target="_blank" rel="noopener" style="{btn}background:#FFFFFF;color:{INK}">Open in Claude ↗</a>
+  <span id="{uid}m" style="color:{MUTED};font-size:12px"></span>
+</div>
+<script>
+(function() {{
+  const ta = document.getElementById("{uid}"), btn = document.getElementById("{uid}b"),
+        msg = document.getElementById("{uid}m");
+  btn.onclick = async () => {{
+    let ok = false;
+    try {{ await navigator.clipboard.writeText(ta.value); ok = true; }} catch (e) {{}}
+    if (!ok) {{ ta.focus(); ta.select(); try {{ ok = document.execCommand("copy"); }} catch (e) {{}} }}
+    msg.textContent = ok ? "Copied ✓  Now paste it into your AI tool."
+                         : "Select the text above (Cmd/Ctrl + A inside the box), then copy it.";
+  }};
+}})();
+</script>
+<div class="note">Using Gemini, Copilot or another tool? Copy the prompt and paste it there.</div>""")
+
 def show_prompt(prompt, provider, rows=None, kind="name"):
-    """Show the prompt; for your own AI, also one box per answer."""
-    print(prompt)
+    """Show the prompt with copy and open-in buttons; for your own AI, also the answer boxes."""
     if provider == PASTE:
-        what = "the name" if kind == "name" else "the colour code"
-        show(f"<b>1.</b> Copy the prompt above into your AI tool.<br>"
-             f"<b>2.</b> For each line below, copy {what} it gave into the box, then run the next cell.")
+        prompt_box(prompt)
+        step2 = ("For each test colour, paste the names your AI gives for that number into its row of boxes."
+                 if kind == "name" else
+                 "Paste the colour code your AI gives for number 1 into box 1, number 2 into box 2, and so on.")
+        show(f"<b>1.</b> Copy the prompt, or open it in ChatGPT or Claude, and send it.<br>"
+             f"<b>2.</b> {step2} Then run the next cell.")
         answer_boxes(rows, kind)
     else:
+        print(prompt)
         show(f'<div class="note">The next cell sends this prompt to {esc(provider)}.</div>')
 
 _HEX = re.compile(r"#?[0-9A-Fa-f]{6}")
@@ -1221,7 +1356,7 @@ def show_name_comparison(cmp, threshold=10):
                     f'{de_badge(r.ai_drift, threshold)}</div>')
         return f'<span style="color:{MUTED};font-size:12px">{esc(r.get("ai_status", ""))}</span>'
     rows = "".join(
-        f'<tr><td><div class="mini" style="background:{r.hex}"></div></td><td>SDG {r.sdg}</td>'
+        f'<tr><td><div class="mini" style="background:{r.hex}"></div></td><td><b>{r.sdg}</b></td>'
         f'<td>{esc(r.language)}</td><td><b>{esc(r["name"])}</b> '
         f'<span style="color:{MUTED};font-size:11px">{r.confidence:.0%}</span></td>'
         f'<td><b>{esc(r.ai_name if isinstance(r.ai_name, str) else "—")}</b></td>'
@@ -1499,5 +1634,5 @@ def safe(fn, *args, **kwargs):
     except Exception:
         return None
 
-TOOLKIT_VERSION = "2026-10-15 13:25"
+TOOLKIT_VERSION = "2026-10-15 14:02"
 print(f"Toolkit ready ✓  version {TOOLKIT_VERSION}  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))
