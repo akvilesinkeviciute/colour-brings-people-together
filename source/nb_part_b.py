@@ -13,9 +13,9 @@ The United Nations identifies its 17 Sustainable Development Goals with 17 colou
 | **Perceptual** | Can people still tell the colours apart with a colour vision deficiency, or with an ageing eye? | within a community |
 | **Cognitive** | Do people reliably agree on what each colour is called, and do the names in different languages point to the same colour? | across languages |
 
-<img src="https://raw.githubusercontent.com/akvilesinkeviciute/colour-brings-people-together/v1.0/images/colour_spinner.png" alt="The Colour Spinner" width="560">
+<img src="https://raw.githubusercontent.com/akvilesinkeviciute/colour-brings-people-together/v1.0/images/sdg_poster.png" alt="The 17 Sustainable Development Goals" width="620">
 
-*The Colour Spinner's six linked views: Picker, Namer, Thesaurus, Translator, Mapper and Profiler, with controls for language and for colour vision deficiency and ageing simulations.*
+*The 17 Sustainable Development Goals and their colours. Source: United Nations, [Sustainable Development Goals communications materials](https://www.un.org/sustainabledevelopment/news/communications-material/). Visit the UN SDG website: [un.org/sustainabledevelopment](https://www.un.org/sustainabledevelopment). The content of this publication has not been approved by the United Nations and does not reflect the views of the United Nations or its officials or Member States.*
 
 A palette can succeed on one axis and fail on the other. By the end you will have a two-axis picture of a subset of SDG colours, your **test colours**, and a comparison with what an AI system says the same colours are called.
 
@@ -465,3 +465,121 @@ cells[_k] = code("".join(cells[_k]["source"]).replace("show_prompt(PROMPT_B, AI,
 _k = _find(lambda s, t: t == "code" and s.startswith("if AI == PASTE:"))
 _lines = "".join(cells[_k]["source"]).split("\n")
 cells[_k] = code("\n".join(['ai_names = collected_answers()                         # the names pasted into the boxes'] + _lines[4:]))
+
+
+# ── one story: your palette, your language, your audience ──
+def _md(i, start, new):
+    assert cells[i]["cell_type"] == "markdown" and "".join(cells[i]["source"]).startswith(start), (i, start)
+    cells[i] = md(new)
+def _code(i, contains, new, hidden=None):
+    assert cells[i]["cell_type"] == "code" and contains in "".join(cells[i]["source"]), (i, contains)
+    cells[i] = code(new, hidden=hidden)
+def _sub(i, a, b):
+    src = "".join(cells[i]["source"]); assert a in src, (i, a); cells[i] = code(src.replace(a, b), hidden=cells[i]["metadata"].get("cellView") == "form")
+
+_m0 = "".join(cells[0]["source"])
+cells[0] = md(_m0.replace("A palette can succeed on one axis and fail on the other.",
+    "**The story.** You are a designer working in your own language, choosing a small palette of SDG colours for an "
+    "international audience. You'll check whether everyone can tell your colours apart, whether your audience calls them "
+    "what you call them, and whether an AI gets it right. In Part C you'll fix the palette for each audience.\n\n"
+    "A palette can succeed on one axis and fail on the other.", 1))
+
+_md(4, "## 2 ·", """## 2 · Your palette, your language and your audience
+
+**Your test palette.** Pick **three to five** SDG colours, as if for a chart, a map or a set of signs. Good choices mix an easy colour with a hard one: one of the reds (1, 4, 5, 8), one of the blues (6, 14, 16, 17) and something in between such as 12. These are your **test colours** for the rest of Parts B and C.
+
+**Your language.** The language you, the designer, name and choose colours in. Usually your own.
+
+**Your audience.** Who will read your design. Tick their languages; include at least one very different from yours, such as **OtjiHimba**, spoken by the Himba of northern Namibia, which has just seven indispensable colour terms (*serandu*, for example, covers what English splits into red, pink and orange).
+
+**Backend.** *Colour Spinner API* fetches everything for you. If the network is slow, choose *Copied from the browser* and fill in the boxes in section 4.""")
+
+_code(5, "#@title Your pair's choices", """#@title Your choices { run: "auto" }
+Subset = "1, 6, 12, 14"  #@param {type:"string"}
+YourLanguage = "British English"  #@param ["American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]
+#@markdown **Your audience's languages** (tick one or more; your own language is always included):
+AmericanEnglish = False  #@param {type:"boolean"}
+BritishEnglish = False  #@param {type:"boolean"}
+French = False  #@param {type:"boolean"}
+Greek = True  #@param {type:"boolean"}
+OtjiHimba = True  #@param {type:"boolean"}
+Spanish = True  #@param {type:"boolean"}
+Backend = "Colour Spinner API"  #@param ["Colour Spinner API", "Copied from the browser"]
+
+ticked = {"American English": AmericanEnglish, "British English": BritishEnglish,
+          "French": French, "Greek": Greek, "OtjiHimba": OtjiHimba, "Spanish": Spanish}
+AUDIENCE = [language for language, on in ticked.items() if on and language != YourLanguage]
+LANGUAGES = [YourLanguage] + AUDIENCE                 # you first, then your audience
+PICK = parse_subset(Subset)
+show_subset(PICK, LANGUAGES)
+show(f"<b>You:</b> {YourLanguage} &nbsp;·&nbsp; <b>Your audience:</b> {', '.join(AUDIENCE) or 'none ticked yet'}")""")
+
+_md(6, "## 3 ·", """## 3 · Can everyone tell your colours apart?
+
+About 1 in 12 men and 1 in 200 women of Northern European descent have a colour vision deficiency, most often a reduced ability to separate reds from greens. Independently, the lens of the eye yellows with age and absorbs more blue light.
+
+**First, some context:** the whole UN palette under each condition, simulated by the Colour Spinner's own models (the ones behind its "Simulate age/CVD" menu): protanopia, deuteranopia, tritanopia, and lens yellowing at ages 40, 60 and 80. Look down each column for colours that change.
+
+These simulations show how a colour might *appear*, not how people with a colour vision deficiency or an older eye would *name* it: the Spinner's naming models were trained on people with typical colour vision.""")
+
+_md(8, "The chart below makes", """**Now your palette.** For each of your test colours, the chart finds the **nearest other test colour** under each condition and reports the CIEDE2000 colour difference (ΔE00) between them. About 1 is just noticeable side by side; for colours that must be told apart at a glance, as in a chart legend or on a sign, aim for 10 or more. The table underneath shows each pair that falls below your threshold, and why those two colours look alike.
+
+**A note on the distances.** All colour differences in this notebook are CIEDE2000 (ΔE00). CIEDE2000 was derived from colour-difference judgements by observers with typical colour vision. Applied to simulated colours, it estimates how different those colours would look to a typical observer, which only approximates what people with a colour vision deficiency or an older eye can tell apart.""")
+_sub(9, "nn_de, nn_id = nearest_neighbours(PICK)", "palette_strip(PICK)\nnn_de, nn_id = nearest_neighbours(PICK)")
+_sub(9, "# ΔE00 to the nearest other SDG colour, per condition", "# ΔE00 to the nearest other test colour, per condition")
+
+_m10 = "".join(cells[10]["source"])
+cells[10] = md(_m10.replace("## 4 · The cognitive axis: what are these colours called?\n\nHere you ask the Colour Spinner what speakers of each language actually call your colours.",
+    "## 4 · Do you and your audience call these colours the same?\n\nHere you ask the Colour Spinner what speakers of your language and of each audience language actually call your test colours.", 1))
+_sub(12, '"name": namer["name"], "romanized": namer.get("romanized"),',
+         '"role": "your language" if language == YourLanguage else "audience",\n                     "name": namer["name"], "romanized": namer.get("romanized"),')
+_sub(12, "show_names_table(naming, LANGUAGES)", "palette_strip(PICK)\nshow_names_table(naming, LANGUAGES, you=YourLanguage)")
+
+_md(15, "### Translatability", """### Translatability: do your names point where your audience's do?
+
+The first column is **your language**: your name for each test colour and that name's **best example** (focal colour), with its ΔE00 from the test colour. Each audience column shows that language's name for the same colour and its focal colour, with its ΔE00 from **yours**. A small distance means the names translate: they point to the same colour. A large one means a translation would land on a different colour.""")
+_code(16, "show_translatability(", "show_translatability(naming, PICK, LANGUAGES, ConfusableBelow, source=YourLanguage)")
+
+cells[18:19] = [cells[18],
+    md("""### Your names in all six languages
+
+The Colour Spinner's **Translator** takes your name for each test colour and finds the best-matching name in every language it covers, including those outside your audience. *Translation confidence* is how closely the two names are used for the same colours: low confidence means there is no clean equivalent."""),
+    code("show_translations(spinner, naming, PICK, YourLanguage)")]
+
+_i = next(k for k, c in enumerate(cells) if c["cell_type"] == "markdown" and "".join(c["source"]).startswith("## 5 ·"))
+_md(_i, "## 5 ·", """## 5 · Two axes, one picture
+
+Each disc is a test colour. Across: its **perceptual distance**, the ΔE00 to the nearest other test colour, for typical colour vision unless you choose another condition. Up: its **naming confidence**, for your language, one audience language, or averaged over your audience. Both axes run from 0 to 1. The grey circle marks where your two thresholds meet. The table underneath gives the numbers, with each language's name and confidence.""")
+_k = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "card = scorecard(" in "".join(c["source"]))
+_src = "".join(cells[_k]["source"])
+_src = _src.replace('Language = "Average of my languages"  #@param ["Average of my languages", "American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]',
+                    'Language = "Average of my audience"  #@param ["Average of my audience", "My language", "Average of all my languages", "American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]')
+_src = _src.replace("card = scorecard(PICK, naming, Language, Vision, Normalise)",
+                    'chosen = {"My language": YourLanguage, "Average of all my languages": ALL_LANGUAGES}.get(Language, Language)\n'
+                    'palette_strip(PICK)\ncard = scorecard(PICK, naming, chosen, Vision, Normalise, audience=AUDIENCE)')
+_src = _src.replace("#@markdown **Language**: whose naming confidence to plot; choose one of the languages you ticked in section 2, or the average.",
+                    "#@markdown **Language**: whose naming confidence to plot: your audience on average, your own language, or one language you chose in section 2.")
+cells[_k] = code(_src, hidden=False)
+
+_i = next(k for k, c in enumerate(cells) if c["cell_type"] == "markdown" and "".join(c["source"]).startswith("## 6 ·"))
+_m = "".join(cells[_i]["source"])
+cells[_i] = md(_m.replace("## 6 · What does an AI system say?\n\nNow ask a current AI system to name the same colours in the same languages, and compare its answers with how speakers actually name them.",
+    "## 6 · Does an AI name them the way your audience does?\n\nDesigners increasingly ask AI tools for colour names and translations. Ask a current AI system to name your test colours in your language and your audience's, and compare its answers with how speakers actually name them.", 1))
+
+_i = next(k for k, c in enumerate(cells) if c["cell_type"] == "markdown" and "".join(c["source"]).startswith("## Before you share"))
+cells[_i] = md("""## Before you share with the room
+
+Agree with your partner on one sentence for each:
+
+1. Which of your test colours works best for **all** your audience, and which worst?
+2. Is your worst colour failing **perceptually** (people can't tell it apart), **cross-linguistically** (your audience calls it something else), or **both**?
+3. Where did the AI's names diverge from your audience's, and does that look like a default towards English or "universal" colour categories?
+
+In Part C you'll take your palette's names and fix the palette for each audience.""")
+
+
+# ── the Colour Spinner screenshot where participants first use the Spinner ──
+_i = next(k for k, c in enumerate(cells) if c["cell_type"] == "markdown" and "".join(c["source"]).startswith("## 4 ·"))
+_src = "".join(cells[_i]["source"])
+_head, _rest = _src.split("\n\n", 1)
+cells[_i] = md(_head + "\n\n" + '<img src="https://raw.githubusercontent.com/akvilesinkeviciute/colour-brings-people-together/v1.0/images/colour_spinner.png" alt="The Colour Spinner" width="560">\n\n*The Colour Spinner\'s six linked views: Picker, Namer, Thesaurus, Translator, Mapper and Profiler, with controls for language and for colour vision deficiency and ageing simulations.*' + "\n\n" + _rest)

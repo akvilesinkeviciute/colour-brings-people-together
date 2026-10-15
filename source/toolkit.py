@@ -166,6 +166,16 @@ SPINNER_API = {
 def _strip(html_text):
     return _html.unescape(re.sub(r"<[^>]+>", "", html_text)).strip()
 
+def _mapper_members(page):
+    """The Mapper's tiles for the top name, in its order: focal colour first, then towards the periphery."""
+    i = page.find('id="mapper-plot"')
+    if i < 0:
+        return []
+    seg = page[i:]
+    seg = seg[:seg.find("</svg>")]
+    fills = [f"#{h.upper()}" for h in re.findall(r"fill:\s*#([0-9a-fA-F]{6})", seg)]
+    return [f for f in dict.fromkeys(fills) if f != "#FFFFFF"]
+
 def parse_color_picker(page):
     """Read the Namer, Mapper and Translator results out of a color_picker response."""
     def grab(pattern):
@@ -192,6 +202,7 @@ def parse_color_picker(page):
         "translation_confidence": float(tr_conf) if tr_conf else None,
         "translation_romanized": _html.unescape(tr_roman) if tr_roman else None,
         "name_ids": options,
+        "members": _mapper_members(page),
     }
 
 class ApiSpinner:
@@ -264,6 +275,12 @@ class ApiSpinner:
         if not found:
             raise RuntimeError(f"Could not read a colour from the Spinner's simulation reply: {j}")
         return found[0]
+
+    def category_members(self, name, language):
+        """Colours speakers call `name`, from most to least typical (the Mapper's tiles)."""
+        best = self.best_example(name, language)
+        res = self.lookup(best, language)
+        return res.get("members", []) if same_name(res["name"], name) else []
 
     def best_example(self, name, language):
         key = (language, norm(name))
@@ -651,9 +668,10 @@ def show_conditions(hexes, labels=None, conditions=CONDITIONS, width=40, note=Tr
          (f'<div class="note">{simulation_source_note()}</div>'
           if note else ""))
 
-def show_babel(table, languages):
+def show_babel(table, languages, labels=None):
     """table: rows with sdg, hex, and per-language '<lang>' name and '<lang>|conf' columns."""
-    head = "<tr><th></th>" + "".join(f"<th>{_h(l)}</th>" for l in languages) + "</tr>"
+    labels = labels or {}
+    head = "<tr><th></th>" + "".join(f"<th>{labels.get(l, _h(l))}</th>" for l in languages) + "</tr>"
     body = ""
     for _, r in table.iterrows():
         cells = ""

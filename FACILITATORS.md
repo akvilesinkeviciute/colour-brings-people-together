@@ -69,6 +69,14 @@ If the Spinner's simulations can't be reached, the perceptual cells show a messa
 
 **Naming confidence.** The Namer's confidence is the probability of the top-ranked term in the Spin Colour Forest naming distribution, read from a pre-classified grid of 7,072 CAM16-UCS points. It is not the Profiler's *Agreement* measure, and the notebooks call it confidence throughout. The best example of a name is its focal colour, the Mapper's top-left tile.
 
+**Perceptual repair.** After grounding, Part C checks each palette under all seven viewing conditions. Where two colours are closer than the threshold, it swaps one for another colour speakers still call by the same name: one of the next eight tiles of that name in the Spinner's Mapper, which run from the most to the least typical. It chooses the swap that best separates the palette, at most once per colour. If none helps, it says so and suggests a second cue (pattern, label or icon). The export records any repaired colour's previous value.
+
+**Palette previews and export.** Part C shows each language's grounded palette in a chart, an interface and wayfinding, with typical vision and one chosen condition, and saves each preview as a PNG. The download has a palette card (PNG), swatch files for Adobe apps (`.ase`), GIMP, Inkscape and Krita (`.gpl`) and Figma or design systems (`.tokens.json`), CSS custom properties, and the CSV and JSON data.
+
+**The story.** Participants choose a test palette, *their* language (as the designer) and *their audience's* languages once, in Part B section 2. Everything follows from that: distinctness is measured within the test palette (the full 17-colour grid is only context), translatability compares the audience's focal colours with the designer's, a Translator table shows the designer's names in all six languages, and Part C builds one grounded palette per language.
+
+**SDG poster.** Part B opens with the UN's official SDG poster (`images/sdg_poster.png`), from the UN's communications materials, with the link and the statement the UN's guidelines require. The UN also asks for permission when SDG branding appears on materials for events with registration fees (sdgpermissions@un.org); confirm this applies, or has been granted, before the session.
+
 **Name matching.** Names are compared ignoring case, accents, punctuation and Greek final sigma, so Κόκκινο matches κοκκινο. They are also compared across scripts. The Spinner gives a Latin spelling for each name (e.g. *kokkino*), and an AI answer counts as the same name if it gives the native word, that spelling, or both, as in "κόκκινο (kokkino)". Synonyms such as *Sky blue* and *Light blue* still count as different names, which is the point of the comparison.
 
 ## Reproducing or editing the notebooks

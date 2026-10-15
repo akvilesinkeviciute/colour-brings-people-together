@@ -35,7 +35,7 @@ For the AI steps, use the AI you use day to day. The notebook shows the prompt w
 | `Part_B_Audit_the_SDG_palette.ipynb` | Part B notebook |
 | `Part_C_Ground_an_AI_palette.ipynb` | Part C notebook |
 | `colour_masterclass.py` | The shared toolkit the notebooks load: colour science through the [colour-science](https://www.colour-science.org) library (CIEDE2000, CAM16-UCS), the Colour Spinner connection, AI helpers, charts and tables |
-| `images/` | The Colour Spinner screenshot shown in Part B |
+| `images/` | The Colour Spinner screenshot, and the UN's SDG poster (from the [UN SDG communications materials](https://www.un.org/sustainabledevelopment/news/communications-material/)) |
 | `FACILITATORS.md` | Notes for running the session, fallbacks, and methods and their limits |
 | `source/` | Scripts that generate the notebooks and the toolkit |
 
@@ -46,3 +46,6 @@ Educators are welcome to reuse the activities in their own teaching.
 - Sinkeviciute, A., Ahmed, R., Stutters, J., Koliousis, A. and Mylonas, D. (2026). Colour Spinner: Making cross-linguistic colour naming diversity visible. Under review.
 - Mylonas, D., Ahmed, R., Sinkeviciute, A. and Koliousis, A. (2026). Colour in translation: Data, models, and benchmarking for cross-linguistic colour naming. *CHI '26*. https://doi.org/10.1145/3772318.3791626
 - United Nations (2015). Sustainable Development Goals. https://sdgs.un.org/goals
+
+---
+*The SDG poster is reproduced from the United Nations' [communications materials](https://www.un.org/sustainabledevelopment/news/communications-material/); see [un.org/sustainabledevelopment](https://www.un.org/sustainabledevelopment). The content of this publication has not been approved by the United Nations and does not reflect the views of the United Nations or its officials or Member States.*

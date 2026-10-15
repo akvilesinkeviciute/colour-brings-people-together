@@ -172,6 +172,16 @@ SPINNER_API = {
 def _strip(html_text):
     return _html.unescape(re.sub(r"<[^>]+>", "", html_text)).strip()
 
+def _mapper_members(page):
+    """The Mapper's tiles for the top name, in its order: focal colour first, then towards the periphery."""
+    i = page.find('id="mapper-plot"')
+    if i < 0:
+        return []
+    seg = page[i:]
+    seg = seg[:seg.find("</svg>")]
+    fills = [f"#{h.upper()}" for h in re.findall(r"fill:\s*#([0-9a-fA-F]{6})", seg)]
+    return [f for f in dict.fromkeys(fills) if f != "#FFFFFF"]
+
 def parse_color_picker(page):
     """Read the Namer, Mapper and Translator results out of a color_picker response."""
     def grab(pattern):
@@ -198,6 +208,7 @@ def parse_color_picker(page):
         "translation_confidence": float(tr_conf) if tr_conf else None,
         "translation_romanized": _html.unescape(tr_roman) if tr_roman else None,
         "name_ids": options,
+        "members": _mapper_members(page),
     }
 
 class ApiSpinner:
@@ -270,6 +281,12 @@ class ApiSpinner:
         if not found:
             raise RuntimeError(f"Could not read a colour from the Spinner's simulation reply: {j}")
         return found[0]
+
+    def category_members(self, name, language):
+        """Colours speakers call `name`, from most to least typical (the Mapper's tiles)."""
+        best = self.best_example(name, language)
+        res = self.lookup(best, language)
+        return res.get("members", []) if same_name(res["name"], name) else []
 
     def best_example(self, name, language):
         key = (language, norm(name))
@@ -657,9 +674,10 @@ def show_conditions(hexes, labels=None, conditions=CONDITIONS, width=40, note=Tr
          (f'<div class="note">{simulation_source_note()}</div>'
           if note else ""))
 
-def show_babel(table, languages):
+def show_babel(table, languages, labels=None):
     """table: rows with sdg, hex, and per-language '<lang>' name and '<lang>|conf' columns."""
-    head = "<tr><th></th>" + "".join(f"<th>{_h(l)}</th>" for l in languages) + "</tr>"
+    labels = labels or {}
+    head = "<tr><th></th>" + "".join(f"<th>{labels.get(l, _h(l))}</th>" for l in languages) + "</tr>"
     body = ""
     for _, r in table.iterrows():
         cells = ""
@@ -826,12 +844,13 @@ def show_subset(pick, languages):
 
 # ── Part B: perceptual axis ───────────────────────────────────────────────
 @needs_simulations(default=(None, None))
-def nearest_neighbours(pick, conditions=CONDITIONS):
-    """For each colour in `pick` and each condition: the nearest other SDG colour and its ΔE00.
-    Returns two tables with the same shape: distances and neighbour ids."""
+def nearest_neighbours(pick, conditions=CONDITIONS, among=None):
+    """For each colour in `pick` and each condition: the nearest other colour among `among`
+    (by default the other test colours) and its ΔE00. Returns distances and neighbour ids."""
+    among = list(pick if among is None else among)
     def nearest(i, c):
         me = simulate(SDG.hex[i], c)
-        return min((de00(me, simulate(h, c)), j) for j, h in SDG.hex.items() if j != i)
+        return min(((de00(me, simulate(SDG.hex[j], c)), j) for j in among if j != i), default=(np.nan, i))
     nn = pd.DataFrame({c: {i: nearest(i, c) for i in pick} for c in conditions})
     return nn.map(lambda t: t[0]), nn.map(lambda t: t[1])
 
@@ -889,32 +908,55 @@ def plot_nearest_neighbours(nn_de, nn_id, threshold):
     pick = list(nn_de.index)
     below = int((nn_de.values < threshold).sum())
     _cell_grid(nn_de, threshold, [str(i) for i in pick],
-               "How close is each test colour to its nearest SDG neighbour?",
-               f"ΔE00 to the nearest other SDG colour under each condition. Red: closer than {threshold}, "
+               "How close is each test colour to its nearest neighbour in your palette?",
+               f"ΔE00 to the nearest other test colour under each condition. Red: closer than {threshold}, "
                f"so easily confused ({below} of {nn_de.size} cells).",
                row_chip_colours=[SDG.hex[i] for i in pick], neighbours=nn_id)
+
+CONDITION_WHY = {
+    "Typical": "They are close even with typical colour vision.",
+    "Protanopia": "Without long-wavelength (red) cones, the red–green difference disappears and reds look darker. "
+                  "What's left is mainly lightness and the blue–yellow difference.",
+    "Deuteranopia": "Without medium-wavelength (green) cones, the red–green difference disappears. "
+                    "What's left is mainly lightness and the blue–yellow difference.",
+    "Tritanopia": "Without short-wavelength (blue) cones, the blue–yellow difference disappears, "
+                  "so blues and greens, or pinks and reds, can merge.",
+    "Age 40": "The eye's lens yellows and absorbs blue light: blues darken and drift towards green, pale colours lose contrast.",
+    "Age 60": "The eye's lens yellows and absorbs blue light: blues darken and drift towards green, pale colours lose contrast.",
+    "Age 80": "The eye's lens yellows strongly and absorbs much of the blue light: blues darken and drift towards green.",
+}
+
+def palette_strip(pick, note="Your test palette"):
+    """A one-line reminder of the colours this section is about."""
+    chips = "".join(f'<div style="display:inline-block;margin-right:8px">{framed(SDG.hex[i], str(i), 56, 34, 12)}</div>'
+                    for i in pick)
+    show(f'<div style="display:flex;align-items:center;gap:12px">{small(note)}<div>{chips}</div></div>')
 
 @needs_simulations()
 def show_at_risk(nn_de, nn_id, threshold):
     if nn_de is None: return
-    at_risk = {}
+    pairs = {}
     for i in nn_de.index:
         for c in nn_de.columns:
             if nn_de.loc[i, c] < threshold:
-                at_risk.setdefault(tuple(sorted((i, nn_id.loc[i, c]))), []).append((c, nn_de.loc[i, c]))
-    if not at_risk:
-        show(f"<b>No pairs at risk.</b> {small(f'Every test colour stays at least ΔE00 {threshold} from its nearest neighbour under every condition.')}")
+                pairs.setdefault(tuple(sorted((i, nn_id.loc[i, c]))), []).append((c, nn_de.loc[i, c]))
+    if not pairs:
+        show(f"<b>No pairs at risk.</b> {small(f'Your test colours stay at least ΔE00 {threshold} apart under every condition.')}")
         return
     rows = []
-    for (i, j), hits in sorted(at_risk.items(), key=lambda kv: min(d for _, d in kv[1])):
-        worst_c, worst_d = min(hits, key=lambda t: t[1])
-        pair = (f'{framed(simulate(SDG.hex[i], worst_c), str(i), 64, 40, 13)}'
-                f'<div style="display:inline-block;width:8px"></div>{framed(simulate(SDG.hex[j], worst_c), str(j), 64, 40, 13)}')
-        conds = " ".join(f'<span style="white-space:nowrap;margin-right:6px">{small(_h(c))} '
-                         f'{pill(f"{d:.1f}", "bad" if d < threshold / 2 else "mid")}</span>' for c, d in hits)
-        rows.append([f'<div style="display:flex">{pair}</div>', f"<b>{worst_d:.1f}</b><br>{small('closest, ' + _h(worst_c))}", conds])
-    show("<b>Pairs at risk</b>")
-    table(["Pair, as seen where closest", "ΔE00", "Every condition below the threshold"], rows)
+    for (i, j), hits in sorted(pairs.items(), key=lambda kv: min(d for _, d in kv[1])):
+        c, d = min(hits, key=lambda t: t[1])
+        typical = de00(SDG.hex[i], SDG.hex[j])
+        two = lambda cond: (f'<div style="display:flex;gap:8px">{framed(simulate(SDG.hex[i], cond), str(i), 60, 38, 12)}'
+                            f'{framed(simulate(SDG.hex[j], cond), str(j), 60, 38, 12)}</div>')
+        also = [x for x in dict.fromkeys(x for x, _ in hits) if x != c]
+        why = CONDITION_WHY.get(c, "") + (f" Also below the threshold: {', '.join(also)}." if also else "")
+        rows.append([two("Typical"), two(c),
+                     f'<span style="white-space:nowrap"><b>{typical:.1f} → {d:.1f}</b></span><br>{small("typical → " + _h(c))}',
+                     f'<span style="font-size:12.5px">{_h(why)}</span>'])
+    show("<b>Pairs at risk, and why</b>")
+    table(["Typical vision", "Where they're closest", "ΔE00", "Why they look alike"], rows,
+          "Each pair is shown with typical vision and under the condition where the two are closest.")
 
 def connect(backend, sheet=None):
     """The Colour Spinner itself, or the values you copied from it into the boxes."""
@@ -992,14 +1034,15 @@ def report_problems(problems):
              '<div class="note">Using the Colour Spinner: check your internet connection, or set Backend to '
              '<i>Copied from the browser</i>. Using the sheet: add the missing rows and run the cell again.</div>')
 
-def show_names_table(naming, languages):
+def show_names_table(naming, languages, you=None):
     if naming.empty: return
     wide = naming.pivot(index="sdg", columns="language", values="name")
     conf = naming.pivot(index="sdg", columns="language", values="confidence").add_suffix("|conf")
     table = SDG.loc[wide.index, ["hex"]].join(wide).join(conf)
     if "romanized" in naming:
         table = table.join(naming.pivot(index="sdg", columns="language", values="romanized").add_suffix("|rom"))
-    show_babel(table, [l for l in languages if l in wide.columns])
+    labels = {you: f"<b style='color:{INK}'>{_h(you)}</b> (you)"} if you else None
+    show_babel(table, [l for l in languages if l in wide.columns], labels=labels)
 
 def plot_nameability(naming, pick, languages):
     rows = [(i, l) for i in pick for l in languages
@@ -1060,15 +1103,43 @@ def show_translatability(naming, pick, languages, threshold, source=None):
                  f'<td style="vertical-align:top;padding-top:20px;color:{MUTED};white-space:nowrap">'
                  f'{"" if pd.isna(sp) else "spread " + format(sp, ".1f")}</td></tr>')
     heads = "".join(f'<th style="width:{W}px;text-align:left;padding:0 0 8px 0;font-weight:400;font-size:12px;white-space:nowrap;color:{MUTED}">'
-                    f'{esc(l)}{(" (source)" if k == 0 else " (target)") if source else ""}</th>'
+                    f'{esc(l)}{(" (you)" if k == 0 else " · audience") if source else ""}</th>'
                     for k, l in enumerate(order))
-    note = ("Source column: ΔE00 between the test colour and the source name's best example (focal colour). "
-            "Target columns: ΔE00 between each target name's focal colour and the source's. " if source else
+    note = ("Your column: ΔE00 between the test colour and your name's best example (focal colour). "
+            "Audience columns: ΔE00 between each audience name's focal colour and yours. " if source else
             "Badges: ΔE00 between the test colour and each language's best example (focal colour). ")
     show('<table style="table-layout:fixed;border-collapse:collapse">'
          f'<tr><th style="width:120px;text-align:left;padding:0 0 8px 0;font-weight:400;font-size:12px;color:{MUTED}">Test colour</th>'
          f'<th style="width:28px"></th>{heads}<th></th></tr>{rows}</table>'
          f'<div class="note">{note}Spread: the largest ΔE00 between any two languages\' focal colours.</div>')
+
+def show_translations(spinner, naming, pick, you):
+    """The Spinner's Translator: your language's name for each test colour, translated into every
+    language it covers, with the translation confidence."""
+    if not hasattr(spinner, "lookup"):
+        show("The translations come from the Colour Spinner directly, so they need Backend set to <i>Colour Spinner API</i>.")
+        return
+    others = [l for l in SPINNER_LANGUAGES if l != you]
+    audience = set(naming.language) - {you}
+    rows = []
+    for i in pick:
+        mine = naming[(naming.sdg == i) & (naming.language == you)]
+        if mine.empty: continue
+        cells = []
+        for l in others:
+            res = safe(spinner.lookup, SDG.hex[i], you, l)
+            if not res or not res.get("translation"):
+                cells.append(small("—")); continue
+            conf = res.get("translation_confidence")
+            rom = res.get("translation_romanized")
+            extra = f" {small(_h(rom))}" if rom and norm(rom) != norm(res["translation"]) else ""
+            cells.append(f'<b>{_h(res["translation"])}</b>{extra}' +
+                         (f'{bar(conf)}{small(f"{conf:.0%} translation confidence")}' if conf is not None else ""))
+        rows.append([framed(SDG.hex[i], str(i)), f'<b>{_h(mine.name.iloc[0])}</b>'] + cells)
+    head = ["Test colour", f"{_h(you)} (you)"] + [f"{_h(l)}" + (" · audience" if l in audience else "") for l in others]
+    table(head, rows, valign="top", note=
+          "From the Spinner's Translator: the name in each language whose naming distribution best matches yours. "
+          "Translation confidence is how closely the two names are used for the same colours.")
 
 def plot_name_map(naming, pick, languages):
     fig, ax = plt.subplots(figsize=(8, 6.2)); _ucs_axes(ax)
@@ -1092,6 +1163,7 @@ def plot_name_map(naming, pick, languages):
 
 # ── Part B: two axes ──────────────────────────────────────────────────────
 ALL_LANGUAGES = "Average of my languages"
+AUDIENCE_AVG = "Average of my audience"
 WORST_CASE = "Worst case of all conditions"
 SUBSET_MAX = "Largest value in my subset"
 SDG_RANGE = "Range across all 17 SDG colours"
@@ -1103,26 +1175,30 @@ def _distances(ids, condition):
         return None
     return de.min(axis=1) if condition == WORST_CASE else de[condition]
 
-def scorecard(pick, naming, language=ALL_LANGUAGES, condition="Typical", normalise=SUBSET_MAX):
+def scorecard(pick, naming, language=ALL_LANGUAGES, condition="Typical", normalise=SUBSET_MAX, audience=None):
     """One row per test colour: its perceptual distance (ΔE00 to the nearest other SDG colour, under
     `condition`) and naming confidence (in `language`, or averaged), both on a 0–1 scale."""
     de = _distances(pick, condition)
     if de is None:
         return None
     if normalise == SDG_RANGE:
-        all_de = _distances(list(SDG.index), condition)
+        all_de = _distances(list(SDG.index), condition)          # the whole palette, as a reference scale
         lo, hi = all_de.min(), all_de.max()
     else:
         lo, hi = 0.0, de.max()
     conf = naming.pivot(index="sdg", columns="language", values="confidence")
     names = naming.pivot(index="sdg", columns="language", values="name")
-    if language != ALL_LANGUAGES and language not in conf.columns:
+    if language not in (ALL_LANGUAGES, AUDIENCE_AVG) and language not in conf.columns:
         show(f'<div class="card"><b>{esc(language)} isn\'t one of the languages you audited</b>'
              f'<p style="margin:6px 0 0">Showing the average of your languages instead. To see {esc(language)}, '
              f'tick it in section 2 and run sections 2 and 4 again. Your languages: '
              f'{esc(", ".join(conf.columns))}.</p></div>')
         language = ALL_LANGUAGES
-    y = conf.mean(axis=1) if language == ALL_LANGUAGES else conf[language]
+    if language == AUDIENCE_AVG:
+        aud = [l for l in (audience or []) if l in conf.columns] or list(conf.columns)
+        y = conf[aud].mean(axis=1)
+    else:
+        y = conf.mean(axis=1) if language == ALL_LANGUAGES else conf[language]
     card = pd.DataFrame({"dE00": de, "perceptual_0to1": (de - lo) / (hi - lo) if hi > lo else 1.0,
                          "confidence_0to1": y.reindex(pick)}, index=pick)
     for l in conf.columns:
@@ -1154,9 +1230,10 @@ def plot_two_axes(card, confusable_below, hard_below):
     cond = card.attrs["condition"]
     vision = "typical colour vision" if cond == "Typical" else ("worst case of all conditions" if cond == WORST_CASE else cond)
     scale = "÷ largest in subset" if card.attrs["normalise"] == SUBSET_MAX else "scaled to all 17 SDG colours"
-    ax.set_xlabel(f"Perceptual distance (ΔE00 to nearest SDG colour, {vision}; {scale})")
-    ax.set_ylabel("Naming confidence" + ("" if card.attrs["language"] == ALL_LANGUAGES else f" ({card.attrs['language']})")
-                  + (" (average of languages)" if card.attrs["language"] == ALL_LANGUAGES else ""))
+    ax.set_xlabel(f"Perceptual distance (ΔE00 to nearest test colour, {vision}; {scale})")
+    lab = card.attrs["language"]
+    ax.set_ylabel("Naming confidence (" + ("average of your audience" if lab == AUDIENCE_AVG else
+                  "average of all your languages" if lab == ALL_LANGUAGES else lab) + ")")
     _titles(ax, "Naming confidence × perceptual distance",
             "Each disc is a test colour. The dashed lines are your two thresholds; the grey circle marks where they meet.")
     if not 0 <= x_cut <= 1:
@@ -1466,7 +1543,7 @@ def load_names(source):
         else:
             partb = pd.read_csv("partB_results.csv")
         names = (partb.dropna(subset=["name"]).drop_duplicates(["language", "name"])
-                 [[c for c in ["sdg", "hex", "language", "name", "romanized", "best_example"] if c in partb]]
+                 [[c for c in ["sdg", "hex", "language", "role", "name", "romanized", "best_example"] if c in partb]]
                  .rename(columns={"hex": "sdg_hex", "best_example": "spinner_hex"}))
     else:
         names = typed_names().assign(sdg=np.nan, sdg_hex=None, spinner_hex=None)[
@@ -1485,7 +1562,11 @@ def _with_roman(r):
                              if isinstance(rom, str) and rom and norm(rom) != norm(r["name"]) else "")
 
 def show_names(names):
-    rows = [[f"<b>{_h(l)}</b>", ", ".join(f"<b>{_with_roman(r)}</b>" for _, r in g.iterrows())]
+    if "sdg" in names and names.sdg.notna().any():
+        palette_strip([int(i) for i in dict.fromkeys(names.sdg.dropna())], "Your test palette from Part B")
+    role = dict(zip(names.language, names.get("role", pd.Series("", index=names.index))))
+    rows = [[f"<b>{_h(l)}</b>" + (f" {small('(you)')}" if role.get(l) == "your language" else ""),
+             ", ".join(f"<b>{_with_roman(r)}</b>" for _, r in g.iterrows())]
             for l, g in names.groupby("language", sort=False)]
     table(["Language", "Names to test"], rows)
 
@@ -1619,6 +1700,82 @@ def show_grounded(pal, languages):
           f"{int(pal.replaced.sum())} of {int(pal.grounded_hex.notna().sum())} colours replaced with the Colour Spinner's "
           "best example. The small swatch is the AI's original colour.")
 
+@needs_simulations(default=None)
+def repair_palettes(pal, spinner, languages, threshold, candidates=8):
+    """Where a grounded palette has two colours closer than `threshold` (ΔE00) under any viewing
+    condition, swap one of them for another colour speakers still call by the same name (the next
+    tiles in the Spinner's Mapper), choosing the swap that best separates the palette."""
+    from itertools import combinations
+    pal = pal.copy()
+    pal["repaired_from"] = None
+    log = []
+    def worst(hexes):
+        best = (np.inf, None, None, None)
+        for (a, ha), (b, hb) in combinations(list(enumerate(hexes)), 2):
+            for c in CONDITIONS:
+                d = de00(simulate(ha, c), simulate(hb, c))
+                if d < best[0]:
+                    best = (d, a, b, c)
+        return best
+    for lang in languages:
+        idx = list(pal.index[(pal.language == lang) & pal.grounded_hex.notna()])
+        if len(idx) < 2:
+            continue
+        for _ in range(len(idx)):                       # at most one swap per colour
+            hexes = [pal.at[k, "grounded_hex"] for k in idx]
+            d, a, b, cond = worst(hexes)
+            if d >= threshold:
+                break
+            options = []
+            for pos in (a, b):
+                k = idx[pos]
+                if pal.at[k, "repaired_from"]:
+                    continue
+                members = safe(spinner.category_members, pal.at[k, "name"], lang) or []
+                tried = [m for m in members[:candidates + 1] if m != pal.at[k, "grounded_hex"]][:candidates]
+                prefetch_simulations(tried)
+                for m in tried:
+                    trial = hexes.copy(); trial[pos] = m
+                    options.append((worst(trial)[0], -members.index(m), k, m))
+            if not options:
+                log.append(dict(language=lang, pair=(pal.at[idx[a], "name"], pal.at[idx[b], "name"]),
+                                before=d, condition=cond, fixed=False))
+                break
+            new_d, _, k, m = max(options)
+            if new_d <= d:
+                log.append(dict(language=lang, pair=(pal.at[idx[a], "name"], pal.at[idx[b], "name"]),
+                                before=d, condition=cond, fixed=False))
+                break
+            log.append(dict(language=lang, name=pal.at[k, "name"], old=pal.at[k, "grounded_hex"], new=m,
+                            pair=(pal.at[idx[a], "name"], pal.at[idx[b], "name"]), before=d, after=new_d,
+                            condition=cond, fixed=new_d >= threshold))
+            pal.at[k, "repaired_from"] = pal.at[k, "grounded_hex"]
+            pal.at[k, "grounded_hex"] = m
+    pal.attrs["repairs"] = log
+    return pal
+
+def show_repairs(pal, threshold):
+    log = pal.attrs.get("repairs", [])
+    if not log:
+        show(f"<b>No perceptual problems.</b> {small(f'Every grounded palette keeps its colours at least ΔE00 {threshold:g} apart under every condition.')}")
+        return
+    rows = []
+    for e in log:
+        if "new" in e:
+            change = (f'{swatch(e["old"])} <span style="color:{MUTED}">→</span> {swatch(e["new"])}')
+            result = (pill(f'{e["before"]:.1f} → {e["after"]:.1f}', "good" if e["fixed"] else "mid") + " " +
+                      small("fixed" if e["fixed"] else "improved, still below the threshold"))
+            what = f'<b>{_h(e["name"])}</b>'
+        else:
+            change, what = small("no alternative found"), "—"
+            result = pill(f'{e["before"]:.1f}', "bad") + " " + small("still too close: consider a pattern, label or icon")
+        rows.append([f"<b>{_h(e['language'])}</b>", f'{_h(e["pair"][0])} & {_h(e["pair"][1])}<br>{small("closest under " + _h(e["condition"]))}',
+                     what, change, result])
+    show("<b>Perceptual repairs</b>")
+    table(["Language", "Pair too close", "Colour changed", "Before → after", "Closest ΔE00"], rows,
+          "Each replacement is another colour speakers call by the same name, taken from the Colour Spinner's Mapper "
+          "(its tiles run from the most to the least typical), chosen to separate the palette most.")
+
 @needs_simulations()
 def closest_pairs(pal, languages, conditions=CONDITIONS):
     """For each language: the smallest ΔE00 between any two of its colours, AI vs grounded."""
@@ -1651,31 +1808,149 @@ def show_grounded_conditions(pal, languages):
 
 
 # ── Part C: export and finding ────────────────────────────────────────────
+# ── Part C: the grounded palette as a picture, in use, and in design-tool formats ──
+def _status(r):
+    if isinstance(r.get("repaired_from"), str): return "repaired"
+    return "replaced" if r.get("replaced") else "kept"
+
+def palette_card(pal, languages, path=None, title="Grounded palette"):
+    """A clean card of every language's grounded palette: swatch, name, hex code and status."""
+    langs = [l for l in languages if pal[(pal.language == l) & pal.grounded_hex.notna()].shape[0]]
+    n = max([pal[(pal.language == l) & pal.grounded_hex.notna()].shape[0] for l in langs] or [1])
+    W, Hd = n * 1.55 + 2.0, len(langs) * 1.45 + 0.1             # data units; one unit is drawn as 0.95 inch
+    fig, ax = plt.subplots(figsize=(W * 0.95, Hd * 0.95 + 1.0))
+    ax.set_xlim(0, W); ax.set_ylim(Hd, -0.2); ax.set_aspect("equal"); ax.axis("off")
+    for row, lang in enumerate(langs):
+        y = row * 1.45
+        ax.text(0, y + 0.42, lang, fontsize=11.5, fontweight="bold", va="center", color=INK)
+        for k, (_, r) in enumerate(pal[(pal.language == lang) & pal.grounded_hex.notna()].iterrows()):
+            x = 2.0 + k * 1.55
+            ax.add_patch(mpl.patches.FancyBboxPatch((x, y), 1.35, 0.78, boxstyle="round,pad=0,rounding_size=0.06",
+                         fc=SURROUND, ec="none"))
+            ax.add_patch(mpl.patches.FancyBboxPatch((x + 0.06, y + 0.06), 1.23, 0.66,
+                         boxstyle="round,pad=0,rounding_size=0.03", fc=r.grounded_hex, ec="none"))
+            ax.text(x + 0.14, y + 0.62, r["name"], fontsize=9.5, fontweight="bold", color=_ink_on(r.grounded_hex))
+            ax.text(x, y + 0.98, r.grounded_hex, fontsize=8.5, color=INK, family="monospace")
+            ax.text(x, y + 1.18, _status(r), fontsize=8, color=MUTED)
+    import textwrap
+    note = textwrap.fill("Each colour shows what speakers of that language mean by the name, from the Colour Spinner. "
+                         "kept: the AI's colour matched · replaced: the speakers' best example · "
+                         "repaired: changed so every viewer can tell the colours apart.", width=int(W * 0.95 * 15))
+    ax.set_title(title, loc="left", fontsize=14, pad=12 + 12 * note.count("\n") + 12)
+    ax.annotate(note, xy=(0, 1), xycoords="axes fraction", xytext=(0, 4), textcoords="offset points",
+                fontsize=8.5, color=MUTED, va="bottom", linespacing=1.3)
+    plt.tight_layout()
+    if path:
+        fig.savefig(path, dpi=200, bbox_inches="tight")
+    plt.show()
+
+def preview_applications(pal, language, vision="Typical", path=None):
+    """The grounded palette for one language, applied to a chart, an interface and wayfinding labels,
+    as seen with typical vision and under `vision`."""
+    p = pal[(pal.language == language) & pal.grounded_hex.notna()]
+    if p.empty:
+        show(f"<b>No grounded palette for {_h(language)}.</b> {small('Choose one of: ' + _h(', '.join(dict.fromkeys(pal.language))))}")
+        return
+    names, hexes = list(p["name"]), list(p.grounded_hex)
+    rows = ["Typical"] + ([vision] if vision != "Typical" else [])
+    fig, axes = plt.subplots(len(rows), 3, figsize=(13, 3.6 * len(rows)), squeeze=False,
+                             gridspec_kw={"width_ratios": [1.2, 1, 1]})
+    vals = [5, 8, 6, 9, 4, 7, 3, 6][:len(names)] + [5] * max(0, len(names) - 8)
+    for r, cond in enumerate(rows):
+        cols = [simulate(h, cond) for h in hexes]
+        ax = axes[r][0]                                     # a chart with a legend
+        ax.bar(range(len(names)), vals, color=cols, width=0.65)
+        ax.set_xticks(range(len(names)), names, fontsize=9, rotation=20 if len(names) > 4 else 0)
+        ax.set_yticks([]); ax.spines["left"].set_visible(False)
+        ax.set_title(f"Chart · {condition_label(cond, ' ')}", fontsize=11)
+        n = len(names)
+        ax = axes[r][1]                                     # interface: buttons and status dots
+        ax.set_xlim(0, 6); ax.set_ylim(n * 1.1 + 0.2, -0.4); ax.set_aspect("equal"); ax.axis("off")
+        for k, (nm, c) in enumerate(zip(names, cols)):
+            y = k * 1.1 + 0.3
+            ax.add_patch(mpl.patches.FancyBboxPatch((0.2, y - 0.36), 2.9, 0.72,
+                         boxstyle="round,pad=0,rounding_size=0.36", fc=c, ec="none"))
+            ax.text(1.65, y, nm, ha="center", va="center", fontsize=9.5, fontweight="bold", color=_ink_on(c))
+            ax.add_patch(mpl.patches.Circle((3.65, y), 0.22, fc=c, ec="none"))
+            ax.text(4.05, y, "status", va="center", fontsize=9, color=MUTED)
+        ax.set_title(f"Interface · {condition_label(cond, ' ')}", fontsize=11)
+        ax = axes[r][2]                                     # wayfinding: colour-coded routes with labels
+        ax.set_xlim(0, 10); ax.set_ylim(n * 1.6 + 0.6, -0.6); ax.set_aspect("equal"); ax.axis("off")
+        for k, (nm, c) in enumerate(zip(names, cols)):
+            y = k * 1.6 + 0.4
+            ax.plot([0.4, 2.6, 3.6, 6.4], [y, y, y + 0.6, y + 0.6], color=c, lw=6, solid_capstyle="round",
+                    solid_joinstyle="round")
+            ax.add_patch(mpl.patches.Circle((7.0, y + 0.6), 0.42, fc=c, ec="white", lw=2))
+            ax.text(7.7, y + 0.6, nm, va="center", fontsize=9.5, color=INK)
+        ax.set_title(f"Wayfinding · {condition_label(cond, ' ')}", fontsize=11)
+    fig.suptitle(f"The {language} grounded palette in use", x=0.01, ha="left", fontsize=14, fontweight="bold")
+    plt.tight_layout()
+    if path:
+        fig.savefig(path, dpi=200, bbox_inches="tight")
+    plt.show()
+
+def _ase(entries):
+    """Adobe Swatch Exchange (.ase) bytes for (name, hex) pairs: Illustrator, Photoshop, InDesign."""
+    import struct
+    blocks = b""
+    for name, hex_ in entries:
+        nm = (name + "\0").encode("utf-16-be")
+        r, g, b = (hex_to_rgb(hex_) / 255).tolist()
+        body = struct.pack(">H", len(name) + 1) + nm + b"RGB " + struct.pack(">fffH", r, g, b, 2)
+        blocks += struct.pack(">HI", 0x0001, len(body)) + body
+    return b"ASEF" + struct.pack(">HHI", 1, 0, len(entries)) + blocks
+
 def export_palette(pal, languages, stem="grounded_palette"):
-    """Write CSV, JSON and CSS versions of the grounded palette, zip them and offer the download."""
+    """Write the grounded palette as data, design-tool swatches and pictures, zip them and offer the download."""
     import zipfile
     cols = ["language", "name", "grounded_hex", "ai_hex", "spinner_hex", "de00", "rt_name", "rt_conf",
-            "replaced", "sdg", "sdg_hex"]
+            "replaced", "repaired_from", "sdg", "sdg_hex"]
     export = pal[[c for c in cols if c in pal.columns]]
-    export.round(2).to_csv(f"{stem}.csv", index=False)
+    final = export.dropna(subset=["grounded_hex"])
+    files = []
+    export.round(2).to_csv(f"{stem}.csv", index=False); files.append(f"{stem}.csv")
     data = {lang: [{"name": r["name"], "hex": r.grounded_hex, "ai_hex": r.ai_hex, "spinner_hex": r.spinner_hex,
                     "dE00_ai_vs_spinner": None if pd.isna(r.de00) else round(float(r.de00), 2),
                     "speakers_call_ai_colour": r.get("rt_name") if isinstance(r.get("rt_name"), str) else None,
+                    "repaired_from": r.get("repaired_from") if isinstance(r.get("repaired_from"), str) else None,
                     "replaced": bool(r.replaced)}
                    for _, r in export[export.language == lang].iterrows()] for lang in languages}
     with open(f"{stem}.json", "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    files.append(f"{stem}.json")
     slug = lambda s: re.sub(r"[^\w]+", "-", norm(s)).strip("-") or "colour"
-    css = ":root {\n" + "".join(
-        f"  --{slug(r.language)}-{slug(r['name'])}: {r.grounded_hex};"
-        f"{'  /* replaced AI ' + r.ai_hex + ' */' if r.replaced and isinstance(r.ai_hex, str) else ''}\n"
-        for _, r in export.dropna(subset=["grounded_hex"]).iterrows()) + "}\n"
-    with open(f"{stem}.css", "w", encoding="utf-8") as f:
-        f.write(css)
+    css = ":root {\n" + "".join(f"  --{slug(r.language)}-{slug(r['name'])}: {r.grounded_hex};\n"
+                                for _, r in final.iterrows()) + "}\n"
+    with open(f"{stem}.css", "w", encoding="utf-8") as f: f.write(css)
+    files.append(f"{stem}.css")
+    tokens = {slug(l): {slug(r["name"]): {"$type": "color", "$value": r.grounded_hex,
+                                          "$description": f"{r['name']} ({l}), {_status(r)}"}
+                        for _, r in final[final.language == l].iterrows()} for l in languages}
+    with open(f"{stem}.tokens.json", "w", encoding="utf-8") as f:        # Figma Tokens / Style Dictionary
+        json.dump(tokens, f, ensure_ascii=False, indent=2)
+    files.append(f"{stem}.tokens.json")
+    entries = [(f"{r.language} · {r['name']}", r.grounded_hex) for _, r in final.iterrows()]
+    with open(f"{stem}.gpl", "w", encoding="utf-8") as f:                 # GIMP, Inkscape, Krita
+        f.write(f"GIMP Palette\nName: {stem}\nColumns: 4\n#\n" + "".join(
+            "{:3d} {:3d} {:3d}\t{}\n".format(*[int(v) for v in hex_to_rgb(h)], n) for n, h in entries))
+    files.append(f"{stem}.gpl")
+    with open(f"{stem}.ase", "wb") as f: f.write(_ase(entries))          # Adobe apps
+    files.append(f"{stem}.ase")
+    palette_card(pal, languages, path=f"{stem}_card.png"); files.append(f"{stem}_card.png")
+    import glob
+    files += sorted(glob.glob("preview_*.png"))                         # any previews made above
     with zipfile.ZipFile(f"{stem}.zip", "w") as z:
-        for ext in ("csv", "json", "css"):
-            z.write(f"{stem}.{ext}")
-    print(css)
+        for fn in files:
+            z.write(fn)
+    show("<b>In the download</b>")
+    table(["File", "Use it in"], [
+        [f"<code>{stem}_card.png</code>", "Slides, reports, sharing: a picture of every palette"],
+        ["<code>preview_….png</code>", "The palette in a chart, an interface and wayfinding, for each language you previewed"],
+        [f"<code>{stem}.ase</code>", "Adobe Illustrator, Photoshop, InDesign (Swatches ▸ Import)"],
+        [f"<code>{stem}.gpl</code>", "GIMP, Inkscape, Krita"],
+        [f"<code>{stem}.tokens.json</code>", "Figma (Tokens Studio), Style Dictionary, design systems"],
+        [f"<code>{stem}.css</code>", "Websites and apps: CSS custom properties"],
+        [f"<code>{stem}.csv</code> · <code>{stem}.json</code>", "Analysis: every colour with the evidence for any change"]])
     download(f"{stem}.zip")
 
 def show_finding(pal, name=""):
@@ -1710,5 +1985,5 @@ def safe(fn, *args, **kwargs):
     except Exception:
         return None
 
-TOOLKIT_VERSION = "2026-10-15 18:04"
+TOOLKIT_VERSION = "2026-10-15 19:29"
 print(f"Toolkit ready ✓  version {TOOLKIT_VERSION}  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))

@@ -6,7 +6,7 @@ cells = [
 md("""# Colour Brings People Together
 ### Part C · Creating an empirically grounded colour palette
 
-In Part B you found what speakers of several languages call a handful of SDG colours. Now reverse the direction. You will give those **names** to an AI system, ask it for the colour each name stands for, and check its answers against where speakers actually centre each name. Where the AI's colour diverges, you replace it with the Colour Spinner's best example, and you finish with a small palette you can defend with evidence. This matters: in the *Colour in Translation* benchmark (Mylonas et al., CHI 2026), a current large language model's colours were on average more than 17 ΔE from speakers' focal colours, because it mapped colour names onto the same prototypes whatever the language.
+In Part B you audited your test palette: what you call each colour in your language, and what your audience calls it in theirs. Now reverse the direction, and fix the palette for each audience. You will give those **names**, yours and your audience's, to an AI system, ask it for the colour each name stands for, and check its answers against where speakers actually centre each name. Where the AI's colour diverges, you replace it with the Colour Spinner's best example, and you finish with a small palette you can defend with evidence. This matters: in the *Colour in Translation* benchmark (Mylonas et al., CHI 2026), a current large language model's colours were on average more than 17 ΔE from speakers' focal colours, because it mapped colour names onto the same prototypes whatever the language.
 
 | Step | You do | Time |
 |---|---|---|
@@ -241,7 +241,7 @@ md("""If a pair falls below the threshold under some condition, you have found a
 
 ## 5 · Export your palette
 
-The files below contain every colour with its name, language, the AI's colour and the evidence for any change."""),
+The download has a picture of every palette, swatch files for design tools (Adobe, GIMP, Figma), CSS for websites, and the data with the evidence for every change."""),
 
 code("""export = pal[["language", "name", "grounded_hex", "ai_hex", "spinner_hex", "de00", "replaced", "sdg", "sdg_hex"]]
 export.round(2).to_csv("grounded_palette.csv", index=False)
@@ -427,3 +427,40 @@ cells[_k] = code("\n".join(['pal = read_ai_colours(collected_answers(), names)  
 # ── polished outputs: the error summary is its own table ──
 _k = _find(lambda s, t: t == "code" and "display(error_summary(" in s)
 cells[_k] = code("".join(cells[_k]["source"]).replace("display(error_summary(pal, LANGUAGES, ReplaceAbove))", "error_summary(pal, LANGUAGES, ReplaceAbove)"))
+
+
+# ── repair perceptual problems the grounding created ──
+_g = _find(lambda s, t: t == "code" and 'pal["replaced"] = pal.grounded_hex != pal.ai_hex' in s and "show_grounded" in s)
+cells[_g + 1:_g + 1] = [
+md("""### Fix colours that grounding made too similar
+
+Grounding can put two colours of one palette close together: the focal colours of neighbouring names, such as two blues, may be hard to tell apart for some viewers. The next cell checks every palette under all seven viewing conditions. Where two colours are closer than the threshold, it swaps one of them for **another colour speakers still call by the same name**: the next tiles in the Spinner's Mapper, which run from the most to the least typical. It picks the swap that separates the palette most. If no colour of that name helps, the table says so; then consider a second cue such as a pattern, label or icon."""),
+code("""#@title Fix perceptual problems { run: "auto" }
+ConfusableBelow = 10  #@param {type:"slider", min:3, max:25, step:1}
+#@markdown Two colours closer than this CIEDE2000 colour difference, under any viewing condition, count as too similar.
+
+if "repaired_from" in pal:                 # rerunning: start again from the grounded colours
+    pal["grounded_hex"] = pal.repaired_from.fillna(pal.grounded_hex)
+fixed = repair_palettes(pal, connect(Backend), LANGUAGES, ConfusableBelow)
+if fixed is not None:
+    pal = fixed
+    show_repairs(pal, ConfusableBelow)""", hidden=False),
+]
+# the later re-check uses the same slider value: drop its own slider
+_k = _find(lambda s, t: t == "code" and s.startswith("#@title Can every viewer tell the colours apart?"))
+cells[_k] = code("".join(cells[_k]["source"]).replace(
+    '#@title Can every viewer tell the colours apart? { run: "auto" }\nConfusableBelow = 10  #@param {type:"slider", min:3, max:25, step:1}\n#@markdown Two colours closer than this CIEDE2000 colour difference count as easily confused, as in Part B.\n\n', ""))
+
+
+# ── the palette in use: previews before export ──
+_e = _find(lambda s, t: t == "code" and s.strip().startswith("export_palette("))
+cells[_e:_e] = [
+md("""### See the palette in use
+
+Choose a language to see its grounded palette applied to three kinds of design: a **chart**, an **interface** (buttons and status dots) and **wayfinding** (colour-coded routes with labels). The second row shows the same designs for another kind of vision, so you can check the palette still works there. Each preview is also saved as a picture you can download."""),
+code("""#@title Preview { run: "auto" }
+PreviewLanguage = "British English"  #@param ["American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]
+PreviewVision = "Deuteranopia"  #@param ["Typical", "Protanopia", "Deuteranopia", "Tritanopia", "Age 40", "Age 60", "Age 80"]
+
+preview_applications(pal, PreviewLanguage, PreviewVision, path=f"preview_{PreviewLanguage.replace(' ', '_')}.png")""", hidden=False),
+]
