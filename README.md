@@ -1,0 +1,47 @@
+# Colour Brings People Together
+
+Notebooks for the masterclass **Colour Brings People Together: Cross-Cultural Colour Communication for Inclusive Design** at BCS HCI 2026, run by Dimitris Mylonas and Akvile Sinkeviciute (Northeastern University London).
+
+You'll use the [Colour Spinner](https://colornaming.net/spinner) to test how well a real palette, the 17 colours of the UN Sustainable Development Goals, communicates across languages, colour vision deficiencies and ageing. You'll then compare an AI system's colour names and colours with how speakers actually use them.
+
+## Open the notebooks
+
+| Part | What you'll do | Time | |
+|---|---|---|---|
+| **B** | Audit the UN SDG palette on two axes: can people tell the colours apart, and do they agree on what they're called? | 45 min | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/akvilesinkeviciute/colour-brings-people-together/blob/v1.0/Part_B_Audit_the_SDG_palette.ipynb) |
+| **C** | Ask an AI for the colour of each name, check it against speakers' data, and build a palette grounded in evidence | 60 min | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/akvilesinkeviciute/colour-brings-people-together/blob/v1.0/Part_C_Ground_an_AI_palette.ipynb) |
+
+Part A, the *Colours of Babel* card game, needs no laptop.
+
+## What you need
+
+- A laptop with a modern web browser. A phone works for the Colour Spinner, but the notebooks are easier on a laptop.
+- A Google account to run the notebooks in Google Colab. Without one, you can do every activity in the [Colour Spinner](https://colornaming.net/spinner) in your browser.
+- No installation and no prior knowledge of colour science or Python.
+
+## How to use the notebooks
+
+1. Click **Open in Colab** for the part you're doing.
+2. Choose **File ▸ Save a copy in Drive**, so your changes are kept.
+3. Run each cell in order with **Shift + Enter**. You only need to change the grey form fields on the right of some cells.
+4. At the end of Part B, download `partB_results.csv`; Part C starts from it.
+
+For the AI steps, the notebooks demonstrate with the Gemini model built into Colab, which needs no set-up. You're welcome to use any AI you regularly use instead: choose *Paste the reply myself* and paste its reply into the notebook.
+
+## What's in this repository
+
+| File | Contents |
+|---|---|
+| `Part_B_Audit_the_SDG_palette.ipynb` | Part B notebook |
+| `Part_C_Ground_an_AI_palette.ipynb` | Part C notebook |
+| `colour_masterclass.py` | The shared toolkit the notebooks load: colour maths (CIEDE2000, CAM16-UCS), the Colour Spinner connection, AI helpers, charts and tables |
+| `FACILITATORS.md` | Notes for running the session, fallbacks, and methods and their limits |
+| `source/` | Scripts that generate the notebooks and the toolkit |
+
+Educators are welcome to reuse the activities in their own teaching.
+
+## References
+
+- Sinkeviciute, A., Stutters, J., Ahmed, R., Koliousis, A. and Mylonas, D. (2026). Colour Spinner: Coordinated multi-view visualisation for cross-linguistic colour communication. *IEEE Transactions on Visualization and Computer Graphics*, under review.
+- Mylonas, D., Ahmed, R., Sinkeviciute, A. and Koliousis, A. (2026). Colour in translation: Data, models, and benchmarking for cross-linguistic colour naming. *CHI '26*. https://doi.org/10.1145/3772318.3791626
+- United Nations (2015). Sustainable Development Goals. https://sdgs.un.org/goals
