@@ -178,15 +178,20 @@ def parse_color_picker(page):
     tr_name = grab(r'data-translated-name="([^"]*)"')
     tr_title = grab(r'data-viz="translator".*?<h1[^>]*>(.*?)</h1>')
     tr_conf = grab(r'data-translation-confidence="([\d.eE+-]+)"')
+    roman = grab(r'id="most-likely-color-name"[^>]*data-romanized-name="([^"]*)"') or \
+            grab(r'data-romanized-name="([^"]*)"[^>]*id="most-likely-color-name"')
+    tr_roman = grab(r'data-translated-romanized="([^"]*)"')
     options = {_strip(n): int(v) for v, n in re.findall(r'<option value="(\d+)"[^>]*>(.*?)</option>', page)}
     if not name or conf is None:
         raise RuntimeError("The Colour Spinner's reply did not contain a Namer result; the site may have changed.")
     return {
         "name": _strip(name),
+        "romanized": _html.unescape(roman) if roman else None,
         "confidence": float(conf) / 100,
         "best_example": rgb_to_hex([int(x) for x in rgb[:3]]) if len(rgb) >= 3 else None,
         "translation": _strip(tr_title) if tr_title else (_html.unescape(tr_name) if tr_name else None),
         "translation_confidence": float(tr_conf) if tr_conf else None,
+        "translation_romanized": _html.unescape(tr_roman) if tr_roman else None,
         "name_ids": options,
     }
 
@@ -225,11 +230,13 @@ class ApiSpinner:
             self._ids.setdefault(language, {}).update({norm(n): i for n, i in res["name_ids"].items()})
             if res["best_example"]:
                 self._best[(language, norm(res["name"]))] = res["best_example"]
+                if res.get("romanized"):
+                    self._best.setdefault((language, norm(res["romanized"])), res["best_example"])
         return self._pages[key]
 
     def name(self, hex_, language):
         res = self.lookup(hex_, language)
-        return {"name": res["name"], "confidence": res["confidence"]}
+        return {"name": res["name"], "confidence": res["confidence"], "romanized": res.get("romanized")}
 
     def translate(self, name_or_hex, src, tgt):
         """Translate a colour (given as hex) from one language to another, as the Translator panel does."""
@@ -414,9 +421,28 @@ class SheetSpinner:
 
 
 def norm(s):
-    """Compare colour names ignoring case, accents and spacing (Κόκκινο == κοκκινο)."""
-    s = unicodedata.normalize("NFD", str(s).strip().lower())
-    return re.sub(r"\s+", " ", "".join(ch for ch in s if unicodedata.category(ch) != "Mn"))
+    """Compare colour names ignoring case, accents, spacing and punctuation
+    (Κόκκινο == κοκκινο; ς == σ)."""
+    s = unicodedata.normalize("NFD", str(s).strip().casefold()).replace("ς", "σ")
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s-]", "", s)).strip()
+
+def name_variants(text):
+    """'kokkino (κόκκινο)' -> ['kokkino', 'κόκκινο']: the name and anything in brackets,
+    so a reply in either script, or both, can be matched."""
+    text = str(text).strip().strip('"')
+    inner = re.findall(r"\(([^)]*)\)", text)
+    main = re.sub(r"\s*\([^)]*\)", "", text).strip()
+    parts = [main] + [p.strip() for chunk in inner for p in re.split(r"[,/;]", chunk)]
+    return [p for p in dict.fromkeys(parts) if p]
+
+def same_name(candidate, name, romanized=None):
+    """True if `candidate` (in any script, with or without a bracketed romanisation)
+    is the Spinner's `name` or its romanised spelling."""
+    if not isinstance(candidate, str) or not isinstance(name, str):
+        return False
+    targets = {norm(name)} | ({norm(romanized)} if isinstance(romanized, str) and romanized else set())
+    return any(norm(v) in targets for v in name_variants(candidate))
 
 def try_call(fn, *a, **k):
     try:
@@ -471,13 +497,13 @@ def ask_ai(prompt, provider=COLAB_AI, model="", base_url=""):
             json={"model": model, "messages": [{"role": "user", "content": prompt}]})
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"]
-    raise ValueError("Choose a provider, or paste the AI's reply into AI_REPLY.")
+    raise ValueError("Choose a provider in the form, or 'Paste the reply from my own AI'.")
 
 def parse_json_reply(text):
     """Pull the first JSON array/object out of an AI reply (ignores ``` fences and chatter)."""
     t = re.sub(r"```(?:json)?", "", text)
     start = min([i for i in (t.find("["), t.find("{")) if i >= 0], default=-1)
-    if start < 0: raise ValueError("No JSON found in the AI reply. Paste the reply into AI_REPLY, or choose a provider in the form.")
+    if start < 0: raise ValueError("No JSON found in the AI reply.")
     obj, _ = json.JSONDecoder().raw_decode(t[start:])
     return obj
 
@@ -562,10 +588,12 @@ def show_babel(table, languages):
     for _, r in table.iterrows():
         cells = ""
         for l in languages:
-            n, c = r.get(l), r.get(f"{l}|conf")
+            n, c, rom = r.get(l), r.get(f"{l}|conf"), r.get(f"{l}|rom")
             if isinstance(n, str):
                 w = 0 if pd.isna(c) else int(round(100 * c))
-                cells += (f'<td><b>{_h(n)}</b><div class="bar"><i style="width:{w}%"></i></div>'
+                extra = (f' <span style="color:{MUTED};font-size:11px">{_h(rom)}</span>'
+                         if isinstance(rom, str) and rom and norm(rom) != norm(n) else "")
+                cells += (f'<td><b>{_h(n)}</b>{extra}<div class="bar"><i style="width:{w}%"></i></div>'
                           f'<span style="color:{MUTED};font-size:11px">{w}% agree</span></td>')
             else:
                 cells += f'<td style="color:{MUTED}">—</td>'
@@ -749,7 +777,10 @@ def show_names_table(naming, languages):
     if naming.empty: return
     wide = naming.pivot(index="sdg", columns="language", values="name")
     conf = naming.pivot(index="sdg", columns="language", values="confidence").add_suffix("|conf")
-    show_babel(SDG.loc[wide.index, ["hex"]].join(wide).join(conf), [l for l in languages if l in wide.columns])
+    table = SDG.loc[wide.index, ["hex"]].join(wide).join(conf)
+    if "romanized" in naming:
+        table = table.join(naming.pivot(index="sdg", columns="language", values="romanized").add_suffix("|rom"))
+    show_babel(table, [l for l in languages if l in wide.columns])
 
 def plot_nameability(naming, pick, languages):
     rows = [(i, l) for i in pick for l in languages
@@ -850,26 +881,132 @@ def plot_two_axes(score, distinct_at, agree_at):
 
 
 # ── Part B: the AI's names ────────────────────────────────────────────────
-def ai_reply(prompt, provider, model="", base_url="", pasted=""):
-    """The pasted reply, or the provider's answer to `prompt`."""
-    return pasted if provider.startswith("Paste") else ask_ai(prompt, provider, model, base_url)
+# ── Asking the AI, and reading its reply ─────────────────────────────────
+PASTE = "Paste the reply from my own AI"
+_BOX = {"widget": None}
+
+def paste_box():
+    """A text box under the cell to paste your own AI's reply into (no code editing)."""
+    try:
+        import ipywidgets as w
+    except ImportError:
+        print("Paste boxes are unavailable here: call ai_reply(..., pasted=your_text) instead.")
+        return None
+    box = w.Textarea(placeholder="Paste your AI's whole reply here, then run the next cell.",
+                     layout=w.Layout(width="100%", height="220px"))
+    _BOX["widget"] = box
+    display(box)
+    return box
+
+def pasted_reply():
+    box = _BOX["widget"]
+    text = box.value if box is not None else ""
+    if not text.strip():
+        raise ValueError("The paste box is empty: paste your AI's reply into it, then run this cell again.")
+    return text
+
+def show_prompt(prompt, provider):
+    """Show the prompt; for your own AI, also a box to paste its reply into."""
+    if provider == PASTE:
+        show("<b>1.</b> Copy the prompt below into your AI tool.<br>"
+             "<b>2.</b> Paste its whole reply into the box underneath, then run the next cell. "
+             "Extra chatter, tables and code fences are fine.")
+        print(prompt)
+        paste_box()
+    else:
+        print(prompt)
+        show(f'<div class="note">The next cell sends this prompt to {esc(provider)}.</div>')
+
+def ai_reply(prompt, provider, model="", base_url="", pasted=None):
+    """Your pasted reply, or the provider's answer to `prompt`."""
+    if provider == PASTE:
+        return pasted if pasted else pasted_reply()
+    return ask_ai(prompt, provider, model, base_url)
+
+_HEX = re.compile(r"#?[0-9A-Fa-f]{6}")
+
+def parse_ai_table(text, fields):
+    """Read an AI reply given as JSON, a table, or lines like 'a | b | c'."""
+    try:
+        obj = parse_json_reply(text)
+        if isinstance(obj, dict): obj = next((v for v in obj.values() if isinstance(v, list)), [obj])
+        if isinstance(obj, list) and obj and isinstance(obj[0], dict):
+            return pd.DataFrame(obj)
+    except ValueError:
+        pass
+    rows = []
+    for line in text.splitlines():
+        line = line.strip().strip("`").strip()
+        if not line or set(line) <= set("|-:+= "):
+            continue
+        line = re.sub(r"^(\d+[.)]|[-*•])\s+", "", line)            # list numbering or bullets
+        parts = [p.strip().strip("*") for p in re.split(r"\s*[|\t]\s*", line.strip("|"))]
+        if len(parts) >= len(fields):
+            rows.append(dict(zip(fields, parts[:len(fields)])))
+    return pd.DataFrame(rows, columns=fields)
+
+def _clean_name(n):
+    """'κόκκινο (kokkino)' -> 'κόκκινο'"""
+    return re.sub(r"\s*\(.*?\)\s*$", "", str(n)).strip().strip('"')
 
 def read_ai_names(reply):
-    t = pd.DataFrame(parse_json_reply(reply))
+    t = parse_ai_table(reply, ["hex", "language", "name"])
+    t = t[t["hex"].astype(str).str.fullmatch(r"\s*#?[0-9A-Fa-f]{6}\s*")].copy()  # skips header rows
+    if t.empty:
+        raise ValueError("Couldn't find any 'colour | language | name' lines in the reply.")
     t["hex"] = t["hex"].map(parse_colour)
+    t["name"] = t["name"].astype(str).str.strip().str.strip('"')
     return t.rename(columns={"name": "ai_name"})[["hex", "language", "ai_name"]]
 
-def show_name_comparison(cmp):
+def where_ai_names_point(cmp, spinner):
+    """For each AI name that differs from the speakers' top name, ask the Spinner's Mapper
+    where that name is centred in the language, and how far that is from the SDG colour."""
+    cmp = cmp.copy()
+    cmp["ai_best"], cmp["ai_drift"], cmp["ai_status"] = None, np.nan, ""
+    for k, r in cmp.iterrows():
+        if r.agrees or not isinstance(r.ai_name, str):
+            continue
+        try:
+            best = None
+            for v in name_variants(r.ai_name):        # either script, if the AI gave both
+                try:
+                    best = spinner.best_example(v, r.language); break
+                except KeyError:
+                    continue
+            if best is None:
+                raise KeyError(r.ai_name)
+        except KeyError:                          # not one of the Spinner's names in this language
+            cmp.at[k, "ai_status"] = ("not in your sheet" if isinstance(spinner, SheetSpinner)
+                                      else "not a Spinner name")
+            continue
+        except Exception:
+            cmp.at[k, "ai_status"] = "lookup failed"
+            continue
+        cmp.at[k, "ai_best"], cmp.at[k, "ai_drift"] = best, de00(r.hex, best)
+    return cmp
+
+def show_name_comparison(cmp, threshold=10):
     same = "<span class='badge' style='background:#DDEFE3;color:#14532D'>same</span>"
     diff = "<span class='badge' style='background:#F9DADA;color:#7F1D1D'>differs</span>"
+    def where(r):
+        if r.agrees or not isinstance(r.get("ai_name"), str):
+            return ""
+        best = r.get("ai_best")
+        if isinstance(best, str):
+            return (f'<div class="row"><div class="mini" style="background:{best}" title="{best}"></div>'
+                    f'{de_badge(r.ai_drift, threshold)}</div>')
+        return f'<span style="color:{MUTED};font-size:12px">{esc(r.get("ai_status", ""))}</span>'
     rows = "".join(
         f'<tr><td><div class="mini" style="background:{r.hex}"></div></td><td>SDG {r.sdg}</td>'
         f'<td>{esc(r.language)}</td><td><b>{esc(r["name"])}</b> '
         f'<span style="color:{MUTED};font-size:11px">{r.confidence:.0%}</span></td>'
         f'<td><b>{esc(r.ai_name if isinstance(r.ai_name, str) else "—")}</b></td>'
-        f'<td>{same if r.agrees else diff}</td></tr>' for _, r in cmp.iterrows())
+        f'<td>{same if r.agrees else diff}</td><td>{where(r)}</td></tr>' for _, r in cmp.iterrows())
     show('<table class="babel"><tr><th></th><th></th><th>Language</th><th>Speakers (Spinner)</th>'
-         f'<th>AI system</th><th></th></tr>{rows}</table>')
+         f'<th>AI system</th><th></th><th>Where the AI\'s name points</th></tr>{rows}</table>'
+         '<div class="note">For names that differ: the Spinner\'s best example of the AI\'s name in that language, '
+         'and its ΔE00 from the SDG colour. Small: a plausible neighbouring name. Large: the name means a '
+         'different colour to speakers.</div>')
 
 def plot_agreement_by_language(cmp, languages):
     by_lang = cmp.groupby("language").agrees.mean().reindex(languages)
@@ -893,32 +1030,59 @@ def load_names(source, typed=""):
         else:
             partb = pd.read_csv("partB_results.csv")
         names = (partb.dropna(subset=["name"]).drop_duplicates(["language", "name"])
-                 [["sdg", "hex", "language", "name", "best_example"]]
+                 [[c for c in ["sdg", "hex", "language", "name", "romanized", "best_example"] if c in partb]]
                  .rename(columns={"hex": "sdg_hex", "best_example": "spinner_hex"}))
     else:
         names = read_sheet(typed).assign(sdg=np.nan, sdg_hex=None, spinner_hex=None)[
             ["sdg", "sdg_hex", "language", "name", "spinner_hex"]]
     return names.reset_index(drop=True)
 
+def plain_with_roman(r):
+    """'κόκκινο (kokkino)' for prompts; just the name when it is already in Latin script."""
+    rom = r.get("romanized")
+    return r["name"] + (f" ({rom})" if isinstance(rom, str) and rom and norm(rom) != norm(r["name"]) else "")
+
+def _with_roman(r):
+    rom = r.get("romanized")
+    return esc(r["name"]) + (f' <span style="color:{MUTED};font-weight:400">({esc(rom)})</span>'
+                             if isinstance(rom, str) and rom and norm(rom) != norm(r["name"]) else "")
+
 def show_names(names):
     langs = list(dict.fromkeys(names.language))
     show('<table class="babel"><tr><th>Language</th><th>Names to test</th></tr>' + "".join(
-         f"<tr><td>{esc(l)}</td><td><b>{', '.join(esc(n) for n in names[names.language == l].name)}</b></td></tr>"
+         f"<tr><td>{esc(l)}</td><td><b>{', '.join(_with_roman(r) for _, r in names[names.language == l].iterrows())}</b></td></tr>"
          for l in langs) + "</table>")
 
 def read_ai_colours(reply, names):
     """Attach the AI's colour for each name (matched on language + name)."""
-    ai = pd.DataFrame(parse_json_reply(reply))
-    ai["ai_hex"] = [parse_colour(" ".join(map(str, r["rgb"]))) if isinstance(r.get("rgb"), list)
-                    else parse_colour(r.get("hex", "")) for _, r in ai.iterrows()]
-    key = lambda t: t.language.map(norm) + "|" + t.name.map(norm)
-    pal = names.assign(key=key(names)).merge(ai.assign(key=key(ai))[["key", "ai_hex"]], on="key", how="left")
+    ai = parse_ai_table(reply, ["language", "name", "colour"])
+    def colour_of(r):
+        for key in ("rgb", "colour", "color", "hex"):
+            v = r.get(key)
+            if isinstance(v, list) and len(v) == 3:
+                return rgb_to_hex(v)
+            if isinstance(v, str):
+                m = _HEX.search(v)
+                if m: return parse_colour(m.group(0))
+                if len(re.findall(r"\d+", v)) == 3: return parse_colour(v)
+        return None
+    ai["ai_hex"] = [colour_of(r) for _, r in ai.iterrows()]
+    ai = ai[ai.ai_hex.notna()].copy()
+    if ai.empty:
+        raise ValueError("Couldn't find any 'language | name | colour' lines in the reply.")
+    pal = names.copy()
+    rom = pal["romanized"] if "romanized" in pal else pd.Series(None, index=pal.index)
+    def find(r, romanized):                   # the AI's line for this name, in either script
+        hits = ai[(ai.language.astype(str).map(norm) == norm(r.language)) &
+                  ai.name.map(lambda n: same_name(n, r["name"], romanized))]
+        return hits.ai_hex.iloc[0] if len(hits) else None
+    pal["ai_hex"] = [find(r, ro) for (_, r), ro in zip(pal.iterrows(), rom)]
     missing = pal[pal.ai_hex.isna()]
     if len(missing):
         show("<b>The AI reply has no colour for:</b> " + ", ".join(
              f"{esc(r['name'])} ({esc(r.language)})" for _, r in missing.iterrows()) +
              '<div class="note">Ask it again for those names, or carry on without them.</div>')
-    return pal.drop(columns="key")
+    return pal
 
 def show_ai_palette(pal):
     have = pal[pal.ai_hex.notna()]
@@ -933,6 +1097,26 @@ def add_best_examples(pal, spinner):
         got = try_call(spinner.best_example, pal.at[k, "name"], pal.at[k, "language"])
         pal.at[k, "spinner_hex"] = None if isinstance(got, Exception) else got
     return pal
+
+
+# ── Part C: round trip ────────────────────────────────────────────────────
+def show_round_trip(pal):
+    rows = ""
+    for _, r in pal.iterrows():
+        if not isinstance(r.ai_hex, str): continue
+        if isinstance(r.get("rt_name"), str):
+            ok = same_name(r.rt_name, r["name"], r.get("romanized"))
+            badge = ("<span class='badge' style='background:#DDEFE3;color:#14532D'>same name</span>" if ok else
+                     "<span class='badge' style='background:#F9DADA;color:#7F1D1D'>different name</span>")
+            said = f'<b>{esc(r.rt_name)}</b> <span style="color:{MUTED};font-size:11px">{r.rt_conf:.0%}</span>'
+        else:
+            badge, said = "", f'<span style="color:{MUTED}">not looked up</span>'
+        rows += (f'<tr><td>{esc(r.language)}</td><td><b>{esc(r["name"])}</b></td>'
+                 f'<td><div class="mini" style="background:{r.ai_hex}" title="{r.ai_hex}"></div></td>'
+                 f'<td>{said}</td><td>{badge}</td></tr>')
+    show('<table class="babel"><tr><th>Language</th><th>Name given to the AI</th><th>AI\'s colour</th>'
+         f'<th>What speakers call that colour (Spinner)</th><th></th></tr>{rows}</table>'
+         '<div class="note">The percentage is the share of speakers who use that name for the AI\'s colour.</div>')
 
 
 # ── Part C: comparing ─────────────────────────────────────────────────────
@@ -1037,10 +1221,13 @@ def show_grounded_conditions(pal, languages):
 def export_palette(pal, languages, stem="grounded_palette"):
     """Write CSV, JSON and CSS versions of the grounded palette, zip them and offer the download."""
     import zipfile
-    export = pal[["language", "name", "grounded_hex", "ai_hex", "spinner_hex", "de00", "replaced", "sdg", "sdg_hex"]]
+    cols = ["language", "name", "grounded_hex", "ai_hex", "spinner_hex", "de00", "rt_name", "rt_conf",
+            "replaced", "sdg", "sdg_hex"]
+    export = pal[[c for c in cols if c in pal.columns]]
     export.round(2).to_csv(f"{stem}.csv", index=False)
     data = {lang: [{"name": r["name"], "hex": r.grounded_hex, "ai_hex": r.ai_hex, "spinner_hex": r.spinner_hex,
                     "dE00_ai_vs_spinner": None if pd.isna(r.de00) else round(float(r.de00), 2),
+                    "speakers_call_ai_colour": r.get("rt_name") if isinstance(r.get("rt_name"), str) else None,
                     "replaced": bool(r.replaced)}
                    for _, r in export[export.language == lang].iterrows()] for lang in languages}
     with open(f"{stem}.json", "w", encoding="utf-8") as f:
@@ -1063,6 +1250,10 @@ def show_finding(pal, name=""):
     if cand.empty: return
     match = cand[cand.name.map(norm) == norm(name)] if name else cand.iloc[:0]
     row = match.iloc[0] if len(match) else cand.loc[cand.de00.idxmax()]
+    rt_line = ""
+    if isinstance(row.get("rt_name"), str):
+        rt_line = (f'<p style="margin:0 0 10px">Speakers would call the AI\'s colour '
+                   f'<b>{esc(row.rt_name)}</b> ({row.rt_conf:.0%} agreement).</p>')
     show(f"""<div class="card">
 <h3>“{esc(row['name'])}” in {esc(row.language)}</h3>
 <div style="display:flex;gap:10px;margin:12px 0;background:{SURROUND};padding:12px;border-radius:6px">
@@ -1072,6 +1263,7 @@ def show_finding(pal, name=""):
        <div class="cap">Best example<div class="hex">{row.spinner_hex}</div></div></div>
   <div style="color:#fff;align-self:center;padding-left:8px;font-size:15px">ΔE00<br><b style="font-size:30px">{row.de00:.1f}</b></div>
 </div>
+{rt_line}
 <p style="margin:0 0 8px">Talk it through with your partner:</p>
 <p style="margin:0 0 4px"><b>What pattern of failure does this reveal?</b> Did the AI default to a Western-centric focal colour,
 collapse a distinction the language maintains, or produce a colour that fails under CVD or ageing?</p>
