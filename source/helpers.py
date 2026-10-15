@@ -35,6 +35,7 @@ def show_subset(pick, languages):
 
 
 # ── Part B: perceptual axis ───────────────────────────────────────────────
+@needs_simulations(default=(None, None))
 def nearest_neighbours(pick, conditions=CONDITIONS):
     """For each colour in `pick` and each condition: the nearest other SDG colour and its ΔE00.
     Returns two tables with the same shape: distances and neighbour ids."""
@@ -45,6 +46,7 @@ def nearest_neighbours(pick, conditions=CONDITIONS):
     return nn.map(lambda t: t[0]), nn.map(lambda t: t[1])
 
 def plot_nearest_neighbours(nn_de, nn_id, threshold):
+    if nn_de is None: return
     pick, conds = list(nn_de.index), list(nn_de.columns)
     fig, ax = plt.subplots(figsize=(1.1 * len(conds) + 1.6, 0.62 * len(pick) + 1.4))
     ax.imshow(nn_de.values, cmap=RISK_CMAP, vmin=0, vmax=2 * threshold, aspect="auto")
@@ -58,7 +60,9 @@ def plot_nearest_neighbours(nn_de, nn_id, threshold):
     ax.set_title(f"Distance to the nearest other SDG colour (ΔE00); red cells fall below {threshold}")
     plt.tight_layout(); plt.show()
 
+@needs_simulations()
 def show_at_risk(nn_de, nn_id, threshold):
+    if nn_de is None: return
     at_risk = {}
     for i in nn_de.index:
         for c in nn_de.columns:
@@ -165,14 +169,19 @@ def plot_name_map(naming, pick, languages):
 # ── Part B: two axes ──────────────────────────────────────────────────────
 def scorecard(nn_de, naming):
     """One row per colour: worst-case perceptual distance and mean naming agreement."""
+    pick = list(nn_de.index) if nn_de is not None else list(dict.fromkeys(naming.sdg))
     return pd.DataFrame({
-        "worst_case_dE00": nn_de.min(axis=1),
-        "worst_condition": nn_de.idxmin(axis=1),
+        "worst_case_dE00": nn_de.min(axis=1) if nn_de is not None else pd.Series(np.nan, index=pick),
+        "worst_condition": nn_de.idxmin(axis=1) if nn_de is not None else pd.Series(None, index=pick),
         "mean_agreement": naming.groupby("sdg").confidence.mean(),
         "language_spread": naming.groupby("sdg").best_example.apply(lambda s: spread(s.tolist())),
-    }).loc[nn_de.index]
+    }).loc[pick]
 
 def plot_two_axes(score, distinct_at, agree_at):
+    if score.worst_case_dE00.isna().all():
+        show("The two-axis picture needs the perceptual audit in section 3, which needs the "
+             "Colour Spinner's simulations. Run section 3 again once they are available.")
+        return
     fig, ax = plt.subplots(figsize=(7.5, 6))
     xmax = max(2.2 * distinct_at, score.worst_case_dE00.max() * 1.15)
     ax.axvline(distinct_at, color="#BDBDB8", ls="--", lw=1); ax.axhline(agree_at, color="#BDBDB8", ls="--", lw=1)
@@ -335,6 +344,7 @@ def show_grounded(pal, languages):
     show(f'<div class="note">{int(pal.replaced.sum())} of {int(pal.grounded_hex.notna().sum())} colours '
          "replaced with the Colour Spinner's best example. Top strip: the AI's original colour.</div>")
 
+@needs_simulations()
 def closest_pairs(pal, languages, conditions=CONDITIONS):
     """For each language: the smallest ΔE00 between any two of its colours, AI vs grounded."""
     from itertools import combinations
@@ -348,6 +358,7 @@ def closest_pairs(pal, languages, conditions=CONDITIONS):
     return pd.DataFrame(rows).set_index(["language", "palette"])
 
 def plot_closest_pairs(check, threshold):
+    if check is None: return
     conds = list(check.columns)
     fig, ax = plt.subplots(figsize=(1.1 * len(conds) + 2.4, 0.5 * len(check) + 1.4))
     ax.imshow(check.values, cmap=RISK_CMAP, vmin=0, vmax=2 * threshold, aspect="auto")
@@ -362,7 +373,9 @@ def plot_closest_pairs(check, threshold):
     ax.set_title("Closest pair in each palette under each condition (ΔE00)")
     plt.tight_layout(); plt.show()
 
+@needs_simulations()
 def show_grounded_conditions(pal, languages):
+    if not _SIM["available"]: return          # the problem was already explained above
     langs = [l for l in languages if pal[pal.language == l].grounded_hex.notna().sum() > 1]
     for k, lang in enumerate(langs):
         p = pal[(pal.language == lang) & pal.grounded_hex.notna()]

@@ -48,84 +48,44 @@ SDG = pd.DataFrame([
 
 
 # ════════════════════════════════════════════════════════════════════════
-#  1. Colour conversions
+#  1. Colour science, via the colour-science library (colour.readthedocs.io)
 # ════════════════════════════════════════════════════════════════════════
+try:
+    import colour
+except ImportError:                                    # not preinstalled in Colab
+    import subprocess, sys
+    print("Installing the colour-science library (once per session)…")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "colour-science"])
+    import colour
+warnings.filterwarnings("ignore", module="colour")
+
+#  Colours are passed around as '#RRGGBB' strings or (r, g, b) in 0–255, as the
+#  Colour Spinner shows them. colour-science works in 0–1, so these helpers convert.
 def hex_to_rgb(h):
-    h = h.strip().lstrip("#")
-    if len(h) == 3: h = "".join(c * 2 for c in h)
-    return np.array([int(h[i:i + 2], 16) for i in (0, 2, 4)], dtype=float)
+    """'#E5243B' -> array([229., 36., 59.])"""
+    h = h.strip()
+    return np.asarray(colour.notation.HEX_to_RGB(h if h.startswith("#") else "#" + h), float) * 255
 
 def rgb_to_hex(rgb):
-    r, g, b = np.clip(np.round(np.asarray(rgb, float)), 0, 255).astype(int)
-    return f"#{r:02X}{g:02X}{b:02X}"
+    """(229, 36, 59) -> '#E5243B'"""
+    rgb = np.clip(np.round(np.asarray(rgb, float)), 0, 255)
+    return colour.notation.RGB_to_HEX(rgb / 255).upper()
 
-def _as_rgb(c):
-    """Accept '#hex', (r,g,b) in 0–255, or arrays of those."""
-    if isinstance(c, str): return hex_to_rgb(c)
-    return np.asarray(c, float)
+def _srgb(c):
+    """sRGB in 0–1 from '#hex' or (r, g, b) in 0–255."""
+    return (hex_to_rgb(c) if isinstance(c, str) else np.asarray(c, float)) / 255
 
-def srgb_to_linear(rgb255):
-    c = np.asarray(rgb255, float) / 255.0
-    return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
-
-def linear_to_srgb(lin):
-    lin = np.clip(lin, 0, 1)
-    c = np.where(lin <= 0.0031308, 12.92 * lin, 1.055 * lin ** (1 / 2.4) - 0.055)
-    return c * 255.0
-
-_M_RGB2XYZ = np.array([[0.4124564, 0.3575761, 0.1804375],
-                       [0.2126729, 0.7151522, 0.0721750],
-                       [0.0193339, 0.1191920, 0.9503041]])
-WHITE_D65 = np.array([95.047, 100.0, 108.883])
-
-def rgb_to_xyz(rgb255):
-    return srgb_to_linear(rgb255) @ _M_RGB2XYZ.T * 100.0
-
-def xyz_to_lab(xyz, white=WHITE_D65):
-    t = np.asarray(xyz, float) / white
-    d = 6 / 29
-    f = np.where(t > d ** 3, np.cbrt(t), t / (3 * d ** 2) + 4 / 29)
-    L = 116 * f[..., 1] - 16
-    a = 500 * (f[..., 0] - f[..., 1])
-    b = 200 * (f[..., 1] - f[..., 2])
-    return np.stack([L, a, b], -1)
+def rgb_to_xyz(c):
+    """CIE XYZ (Y in 0–1) of an sRGB colour."""
+    return colour.sRGB_to_XYZ(_srgb(c))
 
 def rgb_to_lab(c):
-    return xyz_to_lab(rgb_to_xyz(_as_rgb(c)))
-
-def delta_e2000(lab1, lab2):
-    """CIEDE2000 colour difference (Sharma, Wu & Dalal 2005)."""
-    L1, a1, b1 = np.moveaxis(np.asarray(lab1, float), -1, 0)
-    L2, a2, b2 = np.moveaxis(np.asarray(lab2, float), -1, 0)
-    C1, C2 = np.hypot(a1, b1), np.hypot(a2, b2)
-    Cb = (C1 + C2) / 2
-    G = 0.5 * (1 - np.sqrt(Cb ** 7 / (Cb ** 7 + 25 ** 7)))
-    a1p, a2p = (1 + G) * a1, (1 + G) * a2
-    C1p, C2p = np.hypot(a1p, b1), np.hypot(a2p, b2)
-    h1p = np.degrees(np.arctan2(b1, a1p)) % 360
-    h2p = np.degrees(np.arctan2(b2, a2p)) % 360
-    dLp, dCp = L2 - L1, C2p - C1p
-    dh = h2p - h1p
-    dh = np.where(C1p * C2p == 0, 0, np.where(dh > 180, dh - 360, np.where(dh < -180, dh + 360, dh)))
-    dHp = 2 * np.sqrt(C1p * C2p) * np.sin(np.radians(dh / 2))
-    Lbp, Cbp = (L1 + L2) / 2, (C1p + C2p) / 2
-    hs = h1p + h2p
-    hbp = np.where(C1p * C2p == 0, hs,
-          np.where(np.abs(h1p - h2p) <= 180, hs / 2,
-          np.where(hs < 360, (hs + 360) / 2, (hs - 360) / 2)))
-    T = (1 - 0.17 * np.cos(np.radians(hbp - 30)) + 0.24 * np.cos(np.radians(2 * hbp))
-         + 0.32 * np.cos(np.radians(3 * hbp + 6)) - 0.20 * np.cos(np.radians(4 * hbp - 63)))
-    dtheta = 30 * np.exp(-((hbp - 275) / 25) ** 2)
-    Rc = 2 * np.sqrt(Cbp ** 7 / (Cbp ** 7 + 25 ** 7))
-    Sl = 1 + 0.015 * (Lbp - 50) ** 2 / np.sqrt(20 + (Lbp - 50) ** 2)
-    Sc, Sh = 1 + 0.045 * Cbp, 1 + 0.015 * Cbp * T
-    Rt = -np.sin(np.radians(2 * dtheta)) * Rc
-    return np.sqrt((dLp / Sl) ** 2 + (dCp / Sc) ** 2 + (dHp / Sh) ** 2
-                   + Rt * (dCp / Sc) * (dHp / Sh))
+    """CIELAB (D65) of an sRGB colour."""
+    return colour.XYZ_to_Lab(rgb_to_xyz(c))
 
 def de00(c1, c2):
-    """ΔE2000 between two colours given as hex or RGB."""
-    return float(delta_e2000(rgb_to_lab(c1), rgb_to_lab(c2)))
+    """CIEDE2000 colour difference between two colours given as hex or RGB."""
+    return float(colour.delta_E(rgb_to_lab(c1), rgb_to_lab(c2), method="CIE 2000"))
 
 def spread(hexes):
     """Largest ΔE2000 between any two colours in a list (NaN if fewer than two)."""
@@ -133,102 +93,41 @@ def spread(hexes):
     hexes = [h for h in hexes if isinstance(h, str)]
     return max((de00(a, b) for a, b in combinations(hexes, 2)), default=np.nan)
 
-# ── CAM16-UCS (Li et al. 2017), the space the Colour Spinner works in ────
-_M16 = np.array([[ 0.401288, 0.650173, -0.051461],
-                 [-0.250268, 1.204414,  0.045854],
-                 [-0.002079, 0.048952,  0.953127]])
-
-def xyz_to_cam16ucs(xyz, white=WHITE_D65, L_A=64 / np.pi * 0.2, Y_b=20.0,
-                    F=1.0, c=0.69, Nc=1.0):
-    xyz = np.asarray(xyz, float)
-    RGB_w = _M16 @ white
-    D = np.clip(F * (1 - (1 / 3.6) * np.exp((-L_A - 42) / 92)), 0, 1)
-    D_RGB = D * white[1] / RGB_w + 1 - D
-    k = 1 / (5 * L_A + 1)
-    F_L = 0.2 * k ** 4 * (5 * L_A) + 0.1 * (1 - k ** 4) ** 2 * (5 * L_A) ** (1 / 3)
-    n = Y_b / white[1]
-    z = 1.48 + np.sqrt(n)
-    N_bb = 0.725 * n ** -0.2
-    def adapt(x):
-        p = (F_L * np.abs(x) / 100) ** 0.42
-        return 400 * np.sign(x) * p / (p + 27.13) + 0.1
-    Rw, Gw, Bw = adapt(D_RGB * RGB_w)
-    A_w = (2 * Rw + Gw + 0.05 * Bw - 0.305) * N_bb
-    R, G, B = np.moveaxis(adapt(D_RGB * (xyz @ _M16.T)), -1, 0)
-    a = R - 12 * G / 11 + B / 11
-    b = (R + G - 2 * B) / 9
-    h = np.arctan2(b, a)
-    e_t = 0.25 * (np.cos(h + 2) + 3.8)
-    A = (2 * R + G + 0.05 * B - 0.305) * N_bb
-    J = 100 * np.maximum(A / A_w, 0) ** (c * z)
-    t = (50000 / 13 * Nc * N_bb * e_t * np.hypot(a, b)) / (R + G + 21 * B / 20)
-    C = np.maximum(t, 0) ** 0.9 * np.sqrt(J / 100) * (1.64 - 0.29 ** n) ** 0.73
-    M = C * F_L ** 0.25
-    Jp = 1.7 * J / (1 + 0.007 * J)
-    Mp = np.log1p(0.0228 * M) / 0.0228
-    return np.stack([Jp, Mp * np.cos(h), Mp * np.sin(h)], -1)
-
 def rgb_to_cam16ucs(c):
-    return xyz_to_cam16ucs(rgb_to_xyz(_as_rgb(c)))
+    """CAM16-UCS J′a′b′ (Li et al. 2017) under sRGB viewing conditions, the space the
+    Colour Spinner works in. J′ runs 0–100."""
+    return np.asarray(colour.XYZ_to_CAM16UCS(rgb_to_xyz(c)), float)
 
 def de_ucs(c1, c2):
     """Euclidean distance in CAM16-UCS between two colours (hex or RGB)."""
     return float(np.linalg.norm(rgb_to_cam16ucs(c1) - rgb_to_cam16ucs(c2)))
 
+def _check_colour_library():
+    """Guard against unit or API changes in colour-science with known reference values."""
+    checks = [
+        ("sRGB red in CIELAB", rgb_to_lab("#FF0000"), [53.24, 80.09, 67.20], 0.05),
+        ("CIEDE2000, Sharma et al. (2005) pair 1",
+         colour.delta_E([50, 2.6772, -79.7751], [50, 0, -82.7485], method="CIE 2000"), 2.0425, 1e-3),
+        ("CAM16-UCS lightness of white", rgb_to_cam16ucs("#FFFFFF")[0], 100.0, 0.5),
+    ]
+    bad = [n for n, got, want, tol in checks if not np.allclose(got, want, atol=tol)]
+    if bad:
+        raise RuntimeError(f"colour-science {colour.__version__} gave unexpected values for: "
+                           f"{', '.join(bad)}. Please tell the organisers.")
+_check_colour_library()
+
 
 # ════════════════════════════════════════════════════════════════════════
 #  2. Vision simulations — the perceptual axis
 # ════════════════════════════════════════════════════════════════════════
-#  Colour vision deficiency: Machado, Oliveira & Fernandes (2009), severity 1.0,
-#  applied in linear sRGB.
-_MACHADO = {
-    "Protanopia":   np.array([[ 0.152286, 1.052583, -0.204868],
-                              [ 0.114503, 0.786281,  0.099216],
-                              [-0.003882,-0.048116,  1.051998]]),
-    "Deuteranopia": np.array([[ 0.367322, 0.860646, -0.227968],
-                              [ 0.280085, 0.672501,  0.047413],
-                              [-0.011820, 0.042940,  0.968881]]),
-    "Tritanopia":   np.array([[ 1.255528,-0.076749, -0.178779],
-                              [-0.078411, 0.930809,  0.147602],
-                              [ 0.004733, 0.691367,  0.303900]]),
-}
-
-#  The notebooks use the Colour Spinner's own simulations (see simulate() below).
-#  The local models here are a fallback for when the Spinner cannot be reached.
-#  Ageing fallback: lens yellowing only, a first-order approximation.
-#  Optical density of the crystalline lens after van de Kraats & van Norren
-#  (2007), evaluated at the dominant wavelengths of the sRGB primaries and
-#  expressed relative to a 20-year-old observer. It ignores pupil size, scatter
-#  and chromatic adaptation; treat the Colour Spinner's age simulation as the
-#  reference and use this only to explore trends.
-def _lens_density(lam, age):
-    A = age
-    return ((0.446 + 0.000031 * A**2) * (400 / lam) ** 4
-            + 14.19 * 10.68 * np.exp(-(0.057 * (lam - 273)) ** 2)
-            + (0.998 - 0.000063 * A**2) * 2.13 * np.exp(-(0.029 * (lam - 370)) ** 2)
-            + (0.059 + 0.000186 * A**2) * 11.95 * np.exp(-(0.021 * (lam - 325)) ** 2)
-            + (0.016 + 0.000132 * A**2) * 1.43 * np.exp(-(0.008 * (lam - 325)) ** 2)
-            + 0.111)
-
-_PRIMARY_NM = np.array([611.0, 549.0, 464.0])
-def _age_gain(age, ref=20):
-    return 10 ** -(_lens_density(_PRIMARY_NM, age) - _lens_density(_PRIMARY_NM, ref))
-
+#  All colour vision deficiency and age simulations come from the Colour Spinner
+#  (see simulate() in section 3). This section only names the conditions.
 CONDITIONS = ["Typical", "Protanopia", "Deuteranopia", "Tritanopia",
               "Age 40", "Age 60", "Age 80"]
 # The Spinner simulates age bands; its menu labels them by the upper age.
 AGE_BANDS = {"Age 40": "16–40", "Age 60": "40–60", "Age 80": "60–80"}
 def condition_label(c, sep="\n"):
     return f"{c}{sep}({AGE_BANDS[c]})" if c in AGE_BANDS else c
-
-def simulate_local(c, condition="Typical"):
-    """Local fallback: the hex of colour `c` under `condition` (used only if the Spinner is unreachable)."""
-    lin = srgb_to_linear(_as_rgb(c))
-    if condition in _MACHADO:
-        lin = _MACHADO[condition] @ lin
-    elif condition.startswith("Age"):
-        lin = lin * _age_gain(int(condition.split()[1]))
-    return rgb_to_hex(linear_to_srgb(lin))
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -389,63 +288,76 @@ def find_colours(obj):
 
 
 # ── Vision simulations from the Colour Spinner ─────────────────────────────
-_SIM = {"client": None, "use_spinner": True, "cache": {}, "fallbacks": 0}
+_SIM = {"client": None, "available": True, "error": "", "cache": {}}
+
+class SimulationUnavailable(RuntimeError):
+    """The Colour Spinner's simulation could not be reached."""
 
 def _sim_client():
-    if _SIM["use_spinner"] and _SIM["client"] is None:
-        try:
-            _SIM["client"] = ApiSpinner(timeout=10)
-        except Exception:
-            _SIM["use_spinner"] = False
-    return _SIM["client"] if _SIM["use_spinner"] else None
+    if _SIM["client"] is None:
+        _SIM["client"] = ApiSpinner(timeout=15)
+    return _SIM["client"]
 
 def simulate(c, condition="Typical"):
-    """The hex of colour `c` as seen under `condition`, using the Colour Spinner's
-    simulation models. If the Spinner cannot be reached, the notebook switches to
-    local models for the rest of the session and says so in its notes."""
+    """The hex of colour `c` as seen under `condition`, from the Colour Spinner's own
+    simulation models (the ones behind its "Simulate age/CVD" menu)."""
     hx = (c if isinstance(c, str) else rgb_to_hex(c)).upper()
     if not hx.startswith("#"): hx = "#" + hx
     if condition == "Typical":
         return hx
     key = (hx, condition)
     if key not in _SIM["cache"]:
-        client = _sim_client()
-        if client is not None:
-            try:
-                _SIM["cache"][key] = (client.simulate(hx, condition), "spinner")
-            except Exception as e:
-                _SIM["use_spinner"] = False
-                print(f"⚠ The Colour Spinner's simulation is unavailable ({str(e)[:80]}). "
-                      "Using local approximations for the rest of this session.")
-        if key not in _SIM["cache"]:
-            _SIM["cache"][key] = (simulate_local(hx, condition), "local")
-            _SIM["fallbacks"] += 1
-    return _SIM["cache"][key][0]
+        if not _SIM["available"]:
+            raise SimulationUnavailable(_SIM["error"])
+        try:
+            _SIM["cache"][key] = _sim_client().simulate(hx, condition)
+        except Exception as e:
+            _SIM["available"] = False
+            _SIM["error"] = str(e)[:120]
+            raise SimulationUnavailable(_SIM["error"]) from e
+    return _SIM["cache"][key]
+
+def retry_simulations():
+    """Try the Colour Spinner's simulations again after a connection problem."""
+    _SIM.update(available=True, error="")
 
 def prefetch_simulations(hexes, conditions=CONDITIONS):
-    """Fetch the Spinner's simulations for many colours at once (a few requests in parallel)."""
+    """Fetch the Spinner's simulations for many colours at once (six requests in parallel)."""
     from concurrent.futures import ThreadPoolExecutor
     jobs = [(h, c) for h in dict.fromkeys(hexes) for c in conditions if c != "Typical"]
-    client = _sim_client()
-    if client is None or not jobs:
+    if not jobs or not _SIM["available"]:
         return
     try:                                  # one request first, so an outage fails fast
         simulate(*jobs[0])
-    except Exception:
+    except SimulationUnavailable:
         return
     with ThreadPoolExecutor(max_workers=6) as pool:
-        list(pool.map(lambda job: simulate(*job), jobs[1:]))
+        list(pool.map(lambda job: try_call(simulate, *job), jobs[1:]))
 
 def simulation_source_note():
-    srcs = {src for _, src in _SIM["cache"].values()}
-    if srcs == {"spinner"} or not srcs:
-        return ("Simulations from the Colour Spinner (colornaming.net/spinner); "
-                "age rows are its age bands.")
-    if srcs == {"local"}:
-        return ("The Colour Spinner could not be reached, so these are local approximations: "
-                "CVD after Machado et al. (2009); ageing as lens yellowing only.")
-    return ("Mostly the Colour Spinner's simulations; some colours fell back to local "
-            "approximations because the Spinner stopped responding.")
+    return "Simulations from the Colour Spinner (colornaming.net/spinner); age rows are its age bands."
+
+def needs_simulations(default=None):
+    """Decorator: if the Spinner's simulations are unavailable, explain instead of crashing."""
+    import functools
+    def wrap(fn):
+        @functools.wraps(fn)
+        def inner(*a, **k):
+            try:
+                return fn(*a, **k)
+            except SimulationUnavailable as e:
+                show_simulation_problem(str(e))
+                return default
+        return inner
+    return wrap
+
+def show_simulation_problem(err=""):
+    show('<div class="card"><b>The Colour Spinner\'s vision simulations could not be reached</b>'
+         '<p style="margin:6px 0 0">This part of the audit uses the Spinner\'s own colour vision deficiency '
+         'and age models, so it needs the Spinner online. Check your internet connection, then run '
+         '<code>retry_simulations()</code> and this cell again. Meanwhile, use the Spinner\'s '
+         '"Simulate age/CVD" menu in your browser.</p>'
+         + (f'<div class="note">{_h(err)}</div>' if err else "") + '</div>')
 
 
 def _read_sheet(text):
@@ -602,7 +514,7 @@ _CSS = f"""
 
 def _ink_on(hex_):
     """Black or white text, whichever contrasts more with the background (WCAG)."""
-    Y = rgb_to_xyz(hex_to_rgb(hex_))[1] / 100
+    Y = rgb_to_xyz(hex_)[1]
     return INK if (Y + 0.05) / 0.05 > 1.05 / (Y + 0.05) else "#FFFFFF"
 
 def _h(x): return _html.escape(str(x))
@@ -619,6 +531,7 @@ def show_palette(hexes, labels=None, captions=None, note=None):
         for h, l, c in zip(hexes, labels, captions))
     show(f'<div class="surround">{tiles}</div>' + (f'<div class="note">{note}</div>' if note else ""))
 
+@needs_simulations()
 def show_conditions(hexes, labels=None, conditions=CONDITIONS, width=40, note=True):
     """One row per vision condition, so you can scan down a column for change."""
     labels = labels or [""] * len(hexes)

@@ -295,7 +295,7 @@ collapse a distinction the language maintains, or produce a colour that fails un
 </div>\"\"\")"""),
 
 md("""---
-*Colour Spinner: Sinkeviciute, Stutters, Ahmed, Koliousis & Mylonas (2026). Benchmark of AI colour naming: Mylonas, Ahmed, Sinkeviciute & Koliousis, CHI 2026. CVD and age simulations from the Colour Spinner; local fallbacks after Machado, Oliveira & Fernandes (2009) and van de Kraats & van Norren (2007). CAM16-UCS after Li et al. (2017).*"""),
+*Colour Spinner: Sinkeviciute, Stutters, Ahmed, Koliousis & Mylonas (2026). Benchmark of AI colour naming: Mylonas, Ahmed, Sinkeviciute & Koliousis, CHI 2026. Colour vision deficiency and age simulations from the Colour Spinner. CAM16-UCS after Li et al. (2017).*"""),
 ]
 
 
