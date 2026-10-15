@@ -471,6 +471,36 @@ def try_call(fn, *a, **k):
 # ════════════════════════════════════════════════════════════════════════
 COLAB_AI = "Gemini built into Colab"
 
+COLAB_MAX_TOKENS = 2048     # the answers are short; a small limit keeps each request within Colab's free quota
+
+def _colab_generate(ai, prompt, model=""):
+    """Ask Colab's built-in AI with a small output limit. If the quota still refuses, try the
+    cheapest model Colab lists (a 'lite' or Gemma model) before giving up."""
+    def call(name):
+        kw = {"model_name": name} if name else {}
+        for limit in ({"max_output_tokens": COLAB_MAX_TOKENS}, {"max_tokens": COLAB_MAX_TOKENS}, {}):
+            try:
+                return ai.generate_text(prompt, **kw, **limit)
+            except TypeError:            # this version of the library doesn't take that argument
+                continue
+        return ai.generate_text(prompt, **kw)
+    try:
+        return call(model)
+    except Exception as first:
+        quota = any(k in str(first).lower() for k in ("quota", "cost", "403", "429", "rate"))
+        if quota and not model:
+            try:
+                names = [str(m) for m in ai.list_models()]
+                cheap = next((n for k in ("lite", "gemma", "flash") for n in names if k in n.lower()), None)
+                if cheap:
+                    return call(cheap)
+            except Exception:
+                pass
+        raise RuntimeError(
+            "Colab's built-in Gemini couldn't answer: its free usage limit has been reached for now. "
+            "Choose 'Paste answers from my own AI' in the form, copy the prompt into any AI and paste "
+            f"its answers into the boxes. (Details: {str(first)[:160]})") from first
+
 def ask_ai(prompt, provider=COLAB_AI, model="", base_url=""):
     """Send `prompt` to an AI system.
     provider: COLAB_AI uses google.colab.ai, free in Colab with no key;
@@ -491,12 +521,8 @@ def ask_ai(prompt, provider=COLAB_AI, model="", base_url=""):
             from google.colab import ai
         except ImportError:
             raise RuntimeError("Colab's built-in Gemini only works inside Google Colab. "
-                               "Choose another provider, or paste the reply yourself.")
-        try:
-            return ai.generate_text(prompt, model_name=model) if model else ai.generate_text(prompt)
-        except Exception as e:
-            raise RuntimeError(f"Colab's built-in Gemini did not answer ({e}). Wait a minute and run "
-                               "the cell again, or paste the reply yourself.") from e
+                               "Choose 'Paste answers from my own AI' in the form instead.")
+        return _colab_generate(ai, prompt, model)
     if provider == "Anthropic":
         r = requests.post("https://api.anthropic.com/v1/messages", timeout=120, headers={
                 "x-api-key": secret("ANTHROPIC_API_KEY"),
@@ -612,7 +638,7 @@ def show_babel(table, languages):
             else:
                 cells += f'<td style="color:{MUTED}">—</td>'
         body += (f'<tr><td><div class="pair" style="width:96px"><div style="background:{r.hex};'
-                 f'color:{_ink_on(r.hex)};font-weight:700;font-size:13px">SDG {r.name}</div></div></td>{cells}</tr>')
+                 f'color:{_ink_on(r.hex)};font-weight:700;font-size:15px">{r.name}</div></div></td>{cells}</tr>')
     show(f'<table class="babel">{head}{body}</table>')
 
 _GOOD, _MID, _BAD = ("#DDEFE3", "#14532D"), ("#FBF0D0", "#6B4E00"), ("#F9DADA", "#7F1D1D")
@@ -671,20 +697,27 @@ mpl.rcParams.update({
 RISK_CMAP = mpl.colors.LinearSegmentedColormap.from_list(
     "risk", [(0, "#8E1B1B"), (0.4999, "#E7B3A3"), (0.5, "#E3E8DF"), (1, PAPER)])
 
-def chip(ax, y, hex_, label, height=0.72, gap_in=0.12, width_in=0.66, radius_in=0.07):
-    """A rounded colour chip with its label, drawn just left of the plot area at data height y.
-    The same chip is used on every chart, so test colours look the same everywhere."""
+def chip(ax, y, hex_, label, height=0.72, gap_in=0.12, width_in=1.0, frame_in=0.06, radius_in=0.06, height_in=None):
+    """A test-colour chip drawn just left of the plot area at data height y, styled like the
+    framed swatches in the tables: a grey frame, the colour inside, its number bottom-left."""
     fig = ax.figure
     pos = ax.get_position()
     ax_w_in, ax_h_in = pos.width * fig.get_figwidth(), pos.height * fig.get_figheight()
     y_per_in = abs(np.diff(ax.get_ylim())[0]) / ax_h_in
-    w, g = width_in / ax_w_in, gap_in / ax_w_in
     blend = mpl.transforms.blended_transform_factory(ax.transAxes, ax.transData)
-    ax.add_patch(mpl.patches.FancyBboxPatch((-g - w, y - height / 2), w, height,
-                 boxstyle=f"round,pad=0,rounding_size={radius_in / ax_w_in}",
-                 mutation_aspect=y_per_in * ax_w_in, color=hex_, transform=blend, clip_on=False))
-    ax.text(-g - w / 2, y, label, transform=blend, ha="center", va="center", color=_ink_on(hex_),
-            fontsize=10, fontweight="bold", clip_on=False)
+    aspect = y_per_in * ax_w_in
+    if height_in is not None:                 # a fixed size in inches, like the swatches in the tables
+        height = height_in * y_per_in
+    def box(x_in, w_in, h_data, colour, r_in):
+        ax.add_patch(mpl.patches.FancyBboxPatch((x_in / ax_w_in, y - h_data / 2), w_in / ax_w_in, h_data,
+                     boxstyle=f"round,pad=0,rounding_size={r_in / ax_w_in}", mutation_aspect=aspect,
+                     color=colour, transform=blend, clip_on=False))
+    x0 = -(gap_in + width_in)
+    box(x0, width_in, height, SURROUND, radius_in)                                   # grey frame
+    box(x0 + frame_in, width_in - 2 * frame_in, height - 2 * frame_in * y_per_in, hex_, radius_in / 3)
+    ax.text((x0 + frame_in + 0.07) / ax_w_in, y + height / 2 - frame_in * y_per_in - 0.06 * y_per_in, label,
+            transform=blend, ha="left", va="bottom", color=_ink_on(hex_), fontsize=12, fontweight="bold",
+            clip_on=False)
 
 def row_chips(ax, hexes, labels):
     """Replace y tick labels with colour chips carrying the label."""
