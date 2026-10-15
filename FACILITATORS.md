@@ -12,7 +12,7 @@ The Colour Spinner has no separate API. The notebooks make the same requests as 
 |---|---|---|
 | `POST /spinner/color_picker` with `r`, `g`, `b`, `language-select`, `translation-select` | Namer name and confidence, Mapper best example of that name, Translator result | Reply format checked against a saved response |
 | `POST /spinner/simulate` with JSON `{r, g, b, simulation_type}` | Colour vision deficiency and age simulations (`protanopia`, `deuteranopia`, `tritanopia`, `16-40`, `40-60`, `60-80`) | Request format seen; reply read flexibly (24-byte JSON, not yet seen) |
-| `GET /spinner/mobile_panels?language_id=…&colour_id=…` | Best example of a name typed in by hand (Part C, *Type them in* only) | Reply format not yet seen; the notebook searches it for colours |
+| `GET /spinner/mobile_panels?language_id=…&colour_id=…` | Best example of a name the Spinner hasn't already returned: the AI's names in Part B, section 6, and names typed in by hand in Part C | Reply format not yet seen; the notebook searches it for colours |
 
 All of this lives in `SPINNER_API` and `ApiSpinner` in `colour_masterclass.py`. If the site changes, only those need updating.
 
@@ -42,7 +42,7 @@ Run both notebooks on the venue network if you can. In Part B, the *Ask the Colo
 |---|---|
 | Spinner API unreachable | Set `BACKEND` to *Copied from the browser*, then fill in the `SHEET` table from the Spinner's Namer and Mapper panels. Mapper RGB can be typed exactly as shown, e.g. `232 21 56`. |
 | Spinner simulations unreachable | Sections 3 and 5 of Part B and the re-check in Part C show a message. Once the connection is back, run `retry_simulations()` and rerun those cells. Meanwhile, use the Spinner's "Simulate age/CVD" menu in the browser. |
-| Colab's built-in Gemini busy or unavailable | Choose *Paste the reply myself*, copy the printed prompt into any AI chat and paste the reply into `AI_REPLY`. Surrounding chatter and code fences are ignored. |
+| Colab's built-in Gemini busy or unavailable | Choose *Paste the reply from my own AI*: the notebook shows the prompt to copy into any AI chat and a box to paste the reply into. Surrounding chatter and code fences are ignored. |
 | Lost `partB_results.csv` | In Part C, choose *Type them in* and list `language, name` rows. |
 | No Google account | Do the whole audit in the Spinner's browser interface. The notebooks are optional enrichment, as stated in the proposal. |
 
@@ -51,7 +51,7 @@ Run both notebooks on the venue network if you can. In Part B, the *Ask the Colo
 The notebooks demonstrate with the Gemini models built into Colab (`google.colab.ai`), for convenience rather than as a recommendation. Participants are told they can use any AI they regularly use instead. Anyone signed in to Colab can use them free, with no API key or set-up. Leave `AI_MODEL` empty for Colab's default model. `from google.colab import ai; ai.list_models()` lists the others.
 
 Ways to use a different AI system:
-- **Any chat tool:** choose *Paste the reply myself*.
+- **Any chat tool:** choose *Paste the reply from my own AI*. The notebook shows the prompt and a box to paste the reply into; lines, tables and JSON are all read.
 - **Their own API key:** choose *Anthropic* or *OpenAI-compatible*, add `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` under Colab ▸ Secrets (the key icon), and enter a model name.
 
 Colab limits how much free AI use each person gets. Two short prompts per pair should fit comfortably, but test it on a free account before the session.
@@ -70,7 +70,9 @@ If the Spinner's simulations can't be reached, the perceptual cells show a messa
 
 **SDG colours.** The SDG hex values are the commonly published ones from the UN communications guidelines. Verify them against the current guidelines.
 
-**Name matching.** Names are compared ignoring case, accents and spacing, so Κόκκινο matches κοκκινο. Synonyms such as *Sky blue* and *Light blue* count as different names, which is the point of the comparison.
+**Comparing the AI with speakers.** Part B checks each AI name against the speakers' top name, and for names that differ, asks the Mapper where the AI's name is centred and how far that is from the SDG colour. Part C sends each AI colour back to the Namer (a round trip) to see whether speakers would call it by the intended name. By default, a colour is replaced if it is too far from the name's best example or speakers would call it something else; the form in section 4 switches between the two rules.
+
+**Name matching.** Names are compared ignoring case, accents, punctuation and Greek final sigma, so Κόκκινο matches κοκκινο. They are also compared across scripts. The Spinner gives a Latin spelling for each name (e.g. *kokkino*), and an AI answer counts as the same name if it gives the native word, that spelling, or both, as in "κόκκινο (kokkino)". Synonyms such as *Sky blue* and *Light blue* still count as different names, which is the point of the comparison.
 
 ## Reproducing or editing the notebooks
 
