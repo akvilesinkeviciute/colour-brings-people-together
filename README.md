@@ -1,6 +1,6 @@
 # Colour Brings People Together
 
-Notebooks for the masterclass **Colour Brings People Together: Cross-Cultural Colour Communication for Inclusive Design** at BCS HCI 2026, run by Dimitris Mylonas and Akvile Sinkeviciute (Northeastern University London).
+Notebooks for the masterclass **Colour Brings People Together: Cross-Cultural Colour Communication for Inclusive Design** at BCS HCI 2026, run by [Dimitris Mylonas](https://www.linkedin.com/in/dimitrismylonas/) and [Akvile Sinkeviciute](https://www.linkedin.com/in/akvile-sinkeviciute-265069152/) (Northeastern University London).
 
 You'll use the [Colour Spinner](https://colornaming.net/spinner) to test how well a real palette, the 17 colours of the UN Sustainable Development Goals, communicates across languages, colour vision deficiencies and ageing. You'll then compare an AI system's colour names and colours with how speakers actually use them.
 
@@ -26,7 +26,7 @@ Part A, the *Colours of Babel* card game, needs no laptop.
 3. Run each cell in order with **Shift + Enter**. You only need to change the grey form fields on the right of some cells.
 4. At the end of Part B, download `partB_results.csv`; Part C starts from it.
 
-For the AI steps, the notebooks demonstrate with the Gemini model built into Colab, which needs no set-up. You're welcome to use any AI you regularly use instead: choose *Paste the reply myself* and paste its reply into the notebook.
+For the AI steps, the notebooks demonstrate with the Gemini model built into Colab, which needs no set-up. You're welcome to use any AI you regularly use instead: choose *Paste the reply from my own AI*, and the notebook gives you the prompt and a box to paste its reply into.
 
 ## What's in this repository
 
