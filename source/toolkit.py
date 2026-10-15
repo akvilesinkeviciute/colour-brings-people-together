@@ -98,10 +98,6 @@ def rgb_to_cam16ucs(c):
     Colour Spinner works in. J′ runs 0–100."""
     return np.asarray(colour.XYZ_to_CAM16UCS(rgb_to_xyz(c)), float)
 
-def de_ucs(c1, c2):
-    """Euclidean distance in CAM16-UCS between two colours (hex or RGB)."""
-    return float(np.linalg.norm(rgb_to_cam16ucs(c1) - rgb_to_cam16ucs(c2)))
-
 def _check_colour_library():
     """Guard against unit or API changes in colour-science with known reference values."""
     checks = [

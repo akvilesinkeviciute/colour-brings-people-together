@@ -621,3 +621,8 @@ for _k, _c in enumerate(cells):
 for _k, _c in enumerate(cells):
     if _c["cell_type"] == "code" and "chose in section 2" in _src(_k):
         cells[_k] = code(_src(_k).replace("chose in section 2", "chose in section 3"), hidden=False)
+
+
+# ── nameability: one panel per test colour; your language marked ──
+_k = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "".join(c["source"]).strip() == "plot_nameability(naming, PICK, LANGUAGES)")
+cells[_k] = code("plot_nameability(naming, PICK, LANGUAGES, you=YourLanguage)")

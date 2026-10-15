@@ -104,10 +104,6 @@ def rgb_to_cam16ucs(c):
     Colour Spinner works in. J′ runs 0–100."""
     return np.asarray(colour.XYZ_to_CAM16UCS(rgb_to_xyz(c)), float)
 
-def de_ucs(c1, c2):
-    """Euclidean distance in CAM16-UCS between two colours (hex or RGB)."""
-    return float(np.linalg.norm(rgb_to_cam16ucs(c1) - rgb_to_cam16ucs(c2)))
-
 def _check_colour_library():
     """Guard against unit or API changes in colour-science with known reference values."""
     checks = [
@@ -1048,29 +1044,49 @@ def show_names_table(naming, languages, you=None):
     labels = {you: f"<b style='color:{INK}'>{_h(you)}</b> (you)"} if you else None
     show_babel(table, [l for l in languages if l in wide.columns], labels=labels)
 
-def plot_nameability(naming, pick, languages):
-    rows = [(i, l) for i in pick for l in languages
-            if not naming[(naming.sdg == i) & (naming.language == l)].empty]
-    if not rows: return
-    gap = {i: k for k, i in enumerate(pick)}
-    ys = [n + 0.6 * gap[i] for n, (i, l) in enumerate(rows)]
-    fig, ax = plt.subplots(figsize=(8.5, 0.34 * len(rows) + 0.5 * len(pick) + 1))
-    for y, (i, l) in zip(ys, rows):
-        r = naming[(naming.sdg == i) & (naming.language == l)].iloc[0]
-        ax.hlines(y, 0, r.confidence, color="#DADAD5", lw=6, capstyle="round", zorder=1)
-        ax.scatter(r.confidence, y, s=120, color=SDG.hex[i], edgecolor=INK, lw=0.7, zorder=3)
-        ax.text(r.confidence + 0.025, y, f"{r['name']}  {r.confidence:.0%}", va="center", fontsize=10)
-    for i in pick:
-        g = [y for y, (j, _) in zip(ys, rows) if j == i]
-        if g:
-            chip(ax, (min(g) + max(g)) / 2, SDG.hex[i], str(i), height_in=0.62, gap_in=1.45)
-    ax.set_yticks(ys, [l for _, l in rows]); ax.tick_params(axis="y", length=0)
-    ax.invert_yaxis(); ax.set_xlim(0, 1.18); ax.spines["left"].set_visible(False)
-    ax.set_xticks([0, .25, .5, .75, 1]); ax.xaxis.set_major_formatter(mpl.ticker.PercentFormatter(1))
-    ax.set_xlabel("Spinner confidence in its top name")
-    plt.tight_layout(); fig.subplots_adjust(left=0.33, top=0.90)
-    _titles(ax, "Nameability: how confident is the Spinner's top name?",
-            "One row per language. Each bar runs to the confidence of the Spinner's top name.")
+def plot_nameability(naming, pick, languages, threshold=0.5, you=None):
+    """One small panel per test colour: for each language, a bar in the test colour running to the
+    Spinner's confidence in its top name, with the name beside it."""
+    import math
+    pick = [i for i in pick if not naming[naming.sdg == i].empty]
+    if not pick: return
+    langs = [l for l in languages if l in set(naming.language)]
+    ncols = 2 if len(pick) > 1 else 1
+    nrows = math.ceil(len(pick) / ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(6.2 * ncols, 0.48 * len(langs) * nrows + 0.9 * nrows + 0.8),
+                             squeeze=False)
+    for ax in axes.flat[len(pick):]:
+        ax.axis("off")
+    for ax, i in zip(axes.flat, pick):
+        hex_ = SDG.hex[i]
+        for k, l in enumerate(langs):
+            r = naming[(naming.sdg == i) & (naming.language == l)]
+            ax.barh(k, 1.0, height=0.56, color="#EEEEEA", zorder=1)
+            if r.empty: continue
+            r = r.iloc[0]
+            ax.barh(k, r.confidence, height=0.56, color=hex_, zorder=2)
+            inside = r.confidence > 0.62
+            ax.text(r.confidence - 0.02 if inside else r.confidence + 0.02, k, r["name"],
+                    ha="right" if inside else "left", va="center", fontsize=10.5, fontweight="bold",
+                    color=_ink_on(hex_) if inside else INK, zorder=3)
+            ax.text(1.03, k, f"{r.confidence:.0%}", ha="left", va="center", fontsize=10, color=MUTED)
+        ax.axvline(threshold, color=INK, lw=0.8, ls=(0, (3, 3)), alpha=0.35, zorder=1.5)
+        ax.set_yticks(range(len(langs)), [f"{l} (you)" if l == you else l for l in langs], fontsize=10)
+        for t in ax.get_yticklabels():
+            t.set_color(INK if t.get_text().endswith("(you)") else MUTED)
+        ax.tick_params(axis="y", length=0, pad=6)
+        ax.set_xlim(0, 1.12); ax.set_ylim(len(langs) - 0.4, -1.25); ax.set_xticks([])
+        for sp in ax.spines.values(): sp.set_visible(False)
+        ax.text(0, -0.95, f" {i} ", fontsize=11, fontweight="bold", color=_ink_on(hex_), va="center", ha="left",
+                bbox=dict(boxstyle="round,pad=0.35,rounding_size=0.25", fc=hex_, ec=SURROUND, lw=2.5))
+        ax.text(0.075 + 0.028 * len(str(i)), -0.95, SDG.goal[i], fontsize=10, color=MUTED, va="center", ha="left")
+    fig.suptitle("Nameability: how confident is the Spinner's top name?", x=0.01, ha="left",
+                 fontsize=13, fontweight="bold")
+    fig.text(0.01, 1 - 0.55 / fig.get_figheight(),
+             f"Each bar runs to the Spinner's confidence in its top name for the test colour, in each language. "
+             f"Dashed line: {threshold:.0%}; shorter bars mean speakers' names are spread across several terms.",
+             fontsize=9.5, color=MUTED, ha="left", va="top", wrap=True)
+    plt.tight_layout(rect=(0, 0, 1, 1 - 0.7 / fig.get_figheight()), h_pad=0.6)
     plt.show()
 
 def show_translatability(naming, pick, languages, threshold, source=None):
@@ -1405,11 +1421,8 @@ def show_prompt(prompt, provider, rows=None, kind="name"):
     """Show the prompt with copy and open-in buttons; for your own AI, also the answer boxes."""
     if provider == PASTE:
         prompt_box(prompt)
-        step2 = ("For each test colour, paste the names your AI gives for that number into its row of boxes."
-                 if kind == "name" else
-                 "Paste the colour code your AI gives for number 1 into box 1, number 2 into box 2, and so on.")
-        show(f"<b>1.</b> Open your AI with a button above (or copy the prompt) and send it.<br>"
-             f"<b>2.</b> {step2} Then run the next cell.")
+        show("<b>1.</b> Open your AI with a button above (or copy the prompt) and send it.<br>"
+             "<b>2.</b> Copy the AI's <b>whole reply</b> and paste it into the box below, in one go. Then run the next cell.")
         answer_boxes(rows, kind)
     else:
         print(prompt)
@@ -1589,10 +1602,8 @@ def read_ai_colours(reply, names):
         return hits.ai_hex.iloc[0] if len(hits) else None
     pal["ai_hex"] = [find(r, ro) for (_, r), ro in zip(pal.iterrows(), rom)]
     missing = pal[pal.ai_hex.isna()]
-    if len(missing):
-        show("<b>The AI reply has no colour for:</b> " + ", ".join(
-             f"{esc(r['name'])} ({esc(r.language)})" for _, r in missing.iterrows()) +
-             '<div class="note">Ask it again for those names, or carry on without them.</div>')
+    if len(missing) and not isinstance(reply, pd.DataFrame):     # pasted answers already report what's missing
+        show("<b>The AI reply has no colour for:</b> " + ", ".join(f"{_h(r['name'])} ({_h(r.language)})" for _, r in missing.iterrows()))
     return pal
 
 def show_ai_palette(pal):
@@ -1620,6 +1631,34 @@ def add_best_examples(pal, spinner):
 
 
 # ── Part C: round trip ────────────────────────────────────────────────────
+def show_comparison(pal, threshold):
+    """For each name: the AI's colour, the speakers' best example, the ΔE00 between them, and what speakers
+    would call the AI's colour (the round trip)."""
+    top = max(2 * threshold, float(np.nanmax(pal["de00"])) if pal["de00"].notna().any() else 1)
+    rows, last = [], None
+    for _, r in pal.iterrows():
+        lang = f"<b>{_h(r.language)}</b>" if r.language != last else ""
+        last = r.language
+        ai = swatch(r.ai_hex) if isinstance(r.ai_hex, str) else small("no answer")
+        best = swatch(r.spinner_hex) if isinstance(r.spinner_hex, str) else small("missing")
+        d = r.get("de00")
+        if pd.isna(d):
+            dist = small("n/a")
+        else:
+            col = "#B4342D" if d > threshold else ("#C9A227" if d > threshold / 2 else "#3E8E5E")
+            dist = f"<b>{d:.1f}</b>{bar(d / top, col, 140)}"
+        if isinstance(r.get("rt_name"), str):
+            ok = same_name(r.rt_name, r["name"], r.get("romanized"))
+            called = (f'<b>{_h(r.rt_name)}</b> {small(f"{r.rt_conf:.0%}")}<br>'
+                      + (pill("same name", "good") if ok else pill("different name", "bad")))
+        else:
+            called = small("not looked up")
+        rows.append([lang, f"<b>{_h(r['name'])}</b>", ai, best, dist, called])
+    table(["Language", "Name", "AI's colour", "Speakers' best example", "ΔE00 between them", "Speakers call the AI's colour"],
+          rows, note=f"ΔE00 ≈ 1 is just noticeable side by side; above {threshold:g} (red) the two read as different colours. "
+                     "The last column sends the AI's colour back to the Spinner's Namer: if speakers would use a different "
+                     "name for it, the AI's colour says something else.")
+
 def show_round_trip(pal):
     rows, last = [], None
     for _, r in pal.iterrows():
@@ -1680,14 +1719,17 @@ def show_grounded(pal, languages):
         cells = ""
         for _, r in p.iterrows():
             ai = swatch(r.ai_hex, 26, 16) if isinstance(r.ai_hex, str) else small("—")
+            status = (pill("repaired", "mid") if isinstance(r.get("repaired_from"), str) else
+                      pill("replaced", "mid") if r.replaced else pill("kept", "good"))
             cells += (f'<div style="display:inline-block;margin:0 16px 10px 0;vertical-align:top">'
                       f'{framed(r.grounded_hex, r["name"], 112, 54, 13)}'
-                      f'<div style="margin-top:6px">{pill("replaced", "mid") if r.replaced else pill("kept", "good")} '
+                      f'<div style="margin-top:6px">{status} '
                       f'{small("AI:")} {ai}</div></div>')
         rows.append([f"<b>{_h(lang)}</b>", cells])
     table(["Language", "Grounded palette"], rows,
-          f"{int(pal.replaced.sum())} of {int(pal.grounded_hex.notna().sum())} colours replaced with the Colour Spinner's "
-          "best example. The small swatch is the AI's original colour.")
+          f"{int(pal.replaced.sum())} of {int(pal.grounded_hex.notna().sum())} colours differ from the AI's. "
+          "kept: the AI's colour matched · replaced: the speakers' best example · repaired: another colour of the same "
+          "name, so every viewer can tell the colours apart. The small swatch is the AI's original colour.")
 
 @needs_simulations(default=None)
 def repair_palettes(pal, spinner, languages, threshold, candidates=8):
@@ -1802,7 +1844,7 @@ def _status(r):
     if isinstance(r.get("repaired_from"), str): return "repaired"
     return "replaced" if r.get("replaced") else "kept"
 
-def palette_card(pal, languages, path=None, title="Grounded palette"):
+def palette_card(pal, languages, path=None, title="Grounded palette", display_it=True):
     """A clean card of every language's grounded palette: swatch, name, hex code and status."""
     langs = [l for l in languages if pal[(pal.language == l) & pal.grounded_hex.notna()].shape[0]]
     n = max([pal[(pal.language == l) & pal.grounded_hex.notna()].shape[0] for l in langs] or [1])
@@ -1831,7 +1873,7 @@ def palette_card(pal, languages, path=None, title="Grounded palette"):
     plt.tight_layout()
     if path:
         fig.savefig(path, dpi=200, bbox_inches="tight")
-    plt.show()
+    plt.show() if display_it else plt.close(fig)
 
 def preview_applications(pal, language, vision="Typical", path=None):
     """The grounded palette for one language, applied to a chart, an interface and wayfinding labels,
@@ -1925,7 +1967,7 @@ def export_palette(pal, languages, stem="grounded_palette"):
     files.append(f"{stem}.gpl")
     with open(f"{stem}.ase", "wb") as f: f.write(_ase(entries))          # Adobe apps
     files.append(f"{stem}.ase")
-    palette_card(pal, languages, path=f"{stem}_card.png"); files.append(f"{stem}_card.png")
+    palette_card(pal, languages, path=f"{stem}_card.png", display_it=False); files.append(f"{stem}_card.png")
     import glob
     files += sorted(glob.glob("preview_*.png"))                         # any previews made above
     with zipfile.ZipFile(f"{stem}.zip", "w") as z:
@@ -1974,5 +2016,55 @@ def safe(fn, *args, **kwargs):
     except Exception:
         return None
 
-TOOLKIT_VERSION = "2026-10-15 20:01"
+def _finding_row(pal, name=""):
+    cand = pal.dropna(subset=["de00"])
+    if cand.empty:
+        return None
+    match = cand[cand.name.map(norm) == norm(name)] if name else cand.iloc[:0]
+    return match.iloc[0] if len(match) else cand.loc[cand.de00.idxmax()]
+
+def save_finding(pal, name="", pattern="", designer_fix="", stem="my_finding"):
+    """Save the finding as a picture card (PNG) and as data (JSON), zipped for download, so it can be
+    shown in the plenary or collected afterwards."""
+    import zipfile, textwrap, datetime
+    row = _finding_row(pal, name)
+    if row is None:
+        show("There's no finding to save yet: run the comparison in section 3 first."); return
+    data = {"name": row["name"], "language": row.language, "ai_hex": row.ai_hex, "speakers_best_example": row.spinner_hex,
+            "dE00": round(float(row.de00), 1),
+            "speakers_call_ai_colour": row.get("rt_name") if isinstance(row.get("rt_name"), str) else None,
+            "rt_confidence": None if pd.isna(row.get("rt_conf", np.nan)) else round(float(row.rt_conf), 2),
+            "test_colour_sdg": None if pd.isna(row.get("sdg", np.nan)) else int(row.sdg),
+            "pattern_of_failure": pattern.strip() or None, "what_a_designer_should_do": designer_fix.strip() or None,
+            "saved": datetime.datetime.now().isoformat(timespec="minutes")}
+    with open(f"{stem}.json", "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    notes = [(lab, textwrap.wrap(t.strip(), 88)) for lab, t in
+             [("Pattern of failure", pattern), ("What a designer should do", designer_fix)] if t.strip()]
+    H = 3.4 + (0.4 if data["speakers_call_ai_colour"] else 0) + sum(0.38 + 0.3 * len(w) for _, w in notes) + 0.5
+    fig, ax = plt.subplots(figsize=(8, H)); ax.set_xlim(0, 8); ax.set_ylim(H, 0); ax.axis("off")
+    ax.text(0.3, 0.45, f"“{row['name']}” in {row.language}", fontsize=16, fontweight="bold", va="center")
+    ax.add_patch(mpl.patches.FancyBboxPatch((0.3, 0.85), 5.6, 1.65, boxstyle="round,pad=0,rounding_size=0.08", fc=SURROUND, ec="none"))
+    for k, (hex_, lab) in enumerate([(row.ai_hex, "AI system"), (row.spinner_hex, "Speakers' best example")]):
+        x = 0.5 + k * 2.0
+        ax.add_patch(mpl.patches.FancyBboxPatch((x, 1.0), 1.75, 1.0, boxstyle="round,pad=0,rounding_size=0.05", fc=hex_, ec="none"))
+        ax.text(x + 0.1, 1.85, "AI" if k == 0 else "Speakers", fontsize=11, fontweight="bold", color=_ink_on(hex_))
+        ax.text(x, 2.3, f"{lab} · {hex_}", fontsize=8.5, color="white")
+    ax.text(4.65, 1.3, "ΔE00", fontsize=10, color="white"); ax.text(4.65, 1.95, f"{row.de00:.1f}", fontsize=24, fontweight="bold", color="white")
+    y = 2.95
+    if data["speakers_call_ai_colour"]:
+        ax.text(0.3, y, f"Speakers would call the AI's colour “{data['speakers_call_ai_colour']}”"
+                        f" ({data['rt_confidence']:.0%} confidence).", fontsize=10, va="top"); y += 0.45
+    for lab, lines in notes:
+        ax.text(0.3, y, lab, fontsize=10, fontweight="bold", va="top"); y += 0.34
+        ax.text(0.3, y, "\n".join(lines), fontsize=10, va="top", linespacing=1.35); y += 0.3 * len(lines) + 0.12
+    ax.text(0.3, H - 0.2, "Colour Brings People Together · BCS HCI 2026 · data: Colour Spinner (colornaming.net)",
+            fontsize=7.5, color=MUTED)
+    fig.savefig(f"{stem}.png", dpi=200, bbox_inches="tight"); plt.close(fig)
+    with zipfile.ZipFile(f"{stem}.zip", "w") as z:
+        z.write(f"{stem}.png"); z.write(f"{stem}.json")
+    show(f"<b>Saved your finding</b> {small(f'{stem}.png (a card for the plenary) and {stem}.json (the data), in {stem}.zip.')}")
+    download(f"{stem}.zip")
+
+TOOLKIT_VERSION = "2026-10-15 20:39"
 print(f"Toolkit ready ✓  version {TOOLKIT_VERSION}  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))

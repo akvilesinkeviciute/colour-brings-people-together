@@ -464,3 +464,126 @@ PreviewVision = "Deuteranopia"  #@param ["Typical", "Protanopia", "Deuteranopia"
 
 preview_applications(pal, PreviewLanguage, PreviewVision, path=f"preview_{PreviewLanguage.replace(' ', '_')}.png")""", hidden=False),
 ]
+
+
+# ── save the finding (card + data), with the pair's own interpretation ──
+_k = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "show_finding(pal, FindingName)" in "".join(c["source"]))
+cells[_k] = code("""#@title Finding to share { run: "auto" }
+FindingName = ""  #@param {type:"string"}
+#@markdown Leave empty for the name where the AI was furthest from speakers, or type another name.
+show_finding(pal, FindingName)""")
+cells.insert(_k + 1, code("""#@title Save your finding
+Pattern = ""  #@param {type:"string"}
+DesignerFix = ""  #@param {type:"string"}
+#@markdown **Pattern**: what pattern of failure does it reveal? **DesignerFix**: what would a designer need to do differently? Then run this cell to download your finding as a picture card and as data.
+save_finding(pal, FindingName, Pattern, DesignerFix)"""))
+
+
+# ── Part C without repetition: each table appears once, each idea is explained once ──
+def _c(pred):
+    return next(c for c in cells if pred("".join(c["source"]), c["cell_type"]))
+_loader  = cells[1]
+_form    = _c(lambda s, t: t == "code" and s.startswith("#@title Where your names come from"))
+_typed   = _c(lambda s, t: t == "code" and s.startswith('#@title Only if you chose "Type them in"'))
+_load    = _c(lambda s, t: t == "code" and "names = load_names(NamesFrom)" in s)
+_prompt  = _c(lambda s, t: t == "code" and "PROMPT_C = f" in s)
+_preview = _c(lambda s, t: t == "code" and s.startswith("#@title Preview"))
+_export  = _c(lambda s, t: t == "code" and s.strip().startswith("export_palette("))
+_finding = _c(lambda s, t: t == "code" and s.startswith("#@title Finding to share"))
+_save    = _c(lambda s, t: t == "code" and s.startswith("#@title Save your finding"))
+_footer  = _c(lambda s, t: t == "markdown" and s.startswith("---"))
+
+cells[:] = [
+md("""# Colour Brings People Together
+### Part C · Creating an empirically grounded colour palette
+
+In Part B you audited your test palette: what you call each colour, and what your audience calls it. Now go the other way. You'll give those **names** to an AI system, ask it for the colour each name stands for, and check its answers against how speakers actually use each name. Where the AI's colour diverges, you replace it with the speakers' best example, and you finish with a palette for each language that you can defend with evidence.
+
+This matters: in the *Colour in Translation* benchmark (Mylonas et al., CHI 2026), a current large language model's colours were on average more than 17 ΔE from speakers' focal colours, because it mapped colour names onto the same prototypes whatever the language.
+
+| Step | You do | Time |
+|---|---|---|
+| 1–2 | Load your names and ask your AI for their colours | 15 min |
+| 3 | See whether the AI's colours mean the same to speakers | 10 min |
+| 4 | Ground the palette, and fix colours that became too similar | 10 min |
+| 5–7 | See it in use, export it, and save your finding | 10 min |
+| | Plenary discussion | 15 min |
+
+Run each cell with **Shift + Enter** and change only the grey form fields."""),
+_loader,
+md("""## 1 · Your names from Part B
+
+Upload the `partB_results.csv` you downloaded at the end of Part B. If you lost it, choose *Type them in* and enter a few colour names per language."""),
+_form, _typed, _load,
+md("""## 2 · Ask your AI for the colour of each name
+
+The prompt asks for each name's **best example**: the colour native speakers would consider its most typical instance. Use the same AI as in Part B. Copy the prompt or open it with a button, send it, then paste the AI's whole reply into the box in one go."""),
+_prompt,
+code("pal = read_ai_colours(collected_answers(), names)       # the colour codes read from the pasted reply"),
+md("""## 3 · Does the AI's colour mean the same to speakers?
+
+Two checks for every name. **Distance:** how far the AI's colour is from the speakers' best example, the name's focal colour (the Mapper's top-left tile). **Round trip:** send the AI's colour back to the Spinner's Namer and see what speakers would call it. A colour can be some distance from the focal colour and still be read correctly, or close to it and still be called something else; together the two checks show whether the AI's colour communicates."""),
+code("""#@title Compare { run: "auto" }
+ReplaceAbove = 10  #@param {type:"slider", min:3, max:30, step:1}
+#@markdown An AI colour further than this CIEDE2000 colour difference from the speakers' best example counts as divergent.
+
+spinner = connect(Backend)
+pal = add_best_examples(pal, spinner)                   # the speakers' best example of each name
+pal["de00"] = [de00(ai, best) if isinstance(ai, str) and isinstance(best, str) else np.nan
+               for ai, best in zip(pal.ai_hex, pal.spinner_hex)]
+pal["rt_name"], pal["rt_conf"] = None, np.nan
+for k, row in pal.iterrows():                           # round trip: what speakers call the AI's colour
+    if isinstance(row.ai_hex, str):
+        namer = safe(spinner.name, row.ai_hex, row.language)
+        if namer:
+            pal.at[k, "rt_name"], pal.at[k, "rt_conf"] = namer["name"], namer["confidence"]
+pal = pal.sort_values(["language", "de00"], ascending=[True, False]).reset_index(drop=True)
+show_comparison(pal, ReplaceAbove)
+error_summary(pal, LANGUAGES, ReplaceAbove)""", hidden=False),
+md("""The same comparison as a map, in the top-down view of CAM16-UCS colour space used in Part B. Arrows that all point the same way for one language suggest a systematic bias, for instance towards English focal colours."""),
+code("plot_ai_vs_speakers(pal, LANGUAGES, ReplaceAbove)"),
+md("""## 4 · Ground the palette
+
+One cell, two steps. **Ground:** each AI colour that diverges from how speakers use the name (too far from its best example, or called something else; choose the rule in the form) is replaced by the speakers' best example. **Repair:** grounding can put two colours of one palette close together, such as the focal colours of two blues. Where two colours are closer than the threshold under any viewing condition, one is swapped for **another colour speakers still call by the same name** (the next tiles in the Spinner's Mapper), choosing the swap that separates the palette most.
+
+The chart underneath compares each language's AI palette with its grounded one under all seven conditions. If a pair still falls below the threshold, you've found a real design tension: consider a second cue such as a pattern, label or icon, or drop one name.
+
+All colour differences are CIEDE2000 (ΔE00), derived from judgements by observers with typical colour vision; for simulated colours they only approximate what people with a colour vision deficiency or an older eye can tell apart."""),
+code("""#@title Ground and repair { run: "auto" }
+ReplaceWhen = "Either"  #@param ["Either", "Too far from the best example", "Speakers would use a different name"]
+ConfusableBelow = 10  #@param {type:"slider", min:3, max:25, step:1}
+#@markdown **ReplaceWhen**: which check decides that the AI's colour diverges. **ConfusableBelow**: two colours closer than this, under any viewing condition, count as too similar.
+
+too_far = [pd.isna(d) or d > ReplaceAbove for d in pal.de00]
+renamed = [isinstance(n, str) and not same_name(n, m, r)
+           for n, m, r in zip(pal.rt_name, pal.name, pal.get("romanized", pd.Series(None, index=pal.index)))]
+rule = {"Either": [a or b for a, b in zip(too_far, renamed)],
+        "Too far from the best example": too_far,
+        "Speakers would use a different name": renamed}[ReplaceWhen]
+
+# Ground: the speakers' best example wherever the AI's colour diverges.
+pal["grounded_hex"] = [best if isinstance(best, str) and replace else ai
+                       for ai, best, replace in zip(pal.ai_hex, pal.spinner_hex, rule)]
+pal["replaced"] = pal.grounded_hex != pal.ai_hex
+pal = pal.drop(columns=["repaired_from"], errors="ignore")
+# Repair: swap colours that became too similar for another colour of the same name.
+fixed = repair_palettes(pal, spinner, LANGUAGES, ConfusableBelow)
+if fixed is not None:
+    pal = fixed
+show_grounded(pal, LANGUAGES)
+if fixed is not None:
+    show_repairs(pal, ConfusableBelow)
+plot_closest_pairs(closest_pairs(pal, LANGUAGES), ConfusableBelow)""", hidden=False),
+md("""## 5 · See the palette in use
+
+Choose a language to see its grounded palette in a **chart**, an **interface** and **wayfinding**, with typical vision and with another kind of vision. Each preview is saved for the download."""),
+_preview,
+md("""## 6 · Export your palette
+
+The download has a picture of every palette, the previews you made, swatch files for design tools (Adobe, GIMP, Figma), CSS for websites, and the data with the evidence for every change."""),
+_export,
+md("""## 7 · Your most striking finding
+
+The card shows the name where the AI's colour was furthest from what speakers mean; type another name to choose a different one. Then add your interpretation and save the card for the plenary."""),
+_finding, _save, _footer,
+]

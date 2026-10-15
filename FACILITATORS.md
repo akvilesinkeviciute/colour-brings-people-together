@@ -77,6 +77,8 @@ If the Spinner's simulations can't be reached, the perceptual cells show a messa
 
 **SDG poster.** Part B opens with the UN's official SDG poster (`images/sdg_poster.png`), from the UN's communications materials, with the link and the statement the UN's guidelines require. The UN also asks for permission when SDG branding appears on materials for events with registration fees (sdgpermissions@un.org); confirm this applies, or has been granted, before the session.
 
+**Saving findings.** At the end of Part C, pairs type their interpretation into two short fields (the pattern of failure, and what a designer should do) and download `my_finding.zip`: a picture card for the plenary (`my_finding.png`) and the same finding as data (`my_finding.json`), so you can collect them afterwards.
+
 **Name matching.** Names are compared ignoring case, accents, punctuation and Greek final sigma, so Κόκκινο matches κοκκινο. They are also compared across scripts. The Spinner gives a Latin spelling for each name (e.g. *kokkino*), and an AI answer counts as the same name if it gives the native word, that spelling, or both, as in "κόκκινο (kokkino)". Synonyms such as *Sky blue* and *Light blue* still count as different names, which is the point of the comparison.
 
 ## Reproducing or editing the notebooks
