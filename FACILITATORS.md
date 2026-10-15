@@ -42,19 +42,15 @@ Run both notebooks on the venue network if you can. In Part B, the *Ask the Colo
 |---|---|
 | Spinner API unreachable | Set `BACKEND` to *Copied from the browser*, then fill in the `SHEET` table from the Spinner's Namer and Mapper panels. Mapper RGB can be typed exactly as shown, e.g. `232 21 56`. |
 | Spinner simulations unreachable | Sections 3 and 5 of Part B and the re-check in Part C show a message. Once the connection is back, run `retry_simulations()` and rerun those cells. Meanwhile, use the Spinner's "Simulate age/CVD" menu in the browser. |
-| Colab's built-in Gemini busy or unavailable | Choose *Paste the reply from my own AI*: the notebook shows the prompt to copy into any AI chat and a box to paste the reply into. Surrounding chatter and code fences are ignored. |
+| Colab's built-in Gemini stops working (e.g. a usage-limit error) | Switch the form to *Paste answers from my own AI*, the default. Participants copy the prompt into any AI and type its answers into the boxes. |
 | Lost `partB_results.csv` | In Part C, choose *Type them in* and list `language, name` rows. |
 | No Google account | Do the whole audit in the Spinner's browser interface. The notebooks are optional enrichment, as stated in the proposal. |
 
 ### The AI system
 
-The notebooks demonstrate with the Gemini models built into Colab (`google.colab.ai`), for convenience rather than as a recommendation. Participants are told they can use any AI they regularly use instead. Anyone signed in to Colab can use them free, with no API key or set-up. Leave `AI_MODEL` empty for Colab's default model. `from google.colab import ai; ai.list_models()` lists the others.
+The default is **Paste answers from my own AI**: the notebook shows a prompt for any AI tool and one box per answer. In Part B the colour codes and languages are filled in and participants copy in the names; in Part C the names are filled in and they copy in the colour codes. The prompt asks for a fixed format (`#RRGGBB | language | name` in Part B, `language | name | #RRGGBB` in Part C), which makes the answers easy to find in any AI's reply. The names end up in `partB_results.csv` for Part C.
 
-Ways to use a different AI system:
-- **Any chat tool:** choose *Paste the reply from my own AI*. The notebook shows the prompt and a box to paste the reply into; lines, tables and JSON are all read.
-- **Their own API key:** choose *Anthropic* or *OpenAI-compatible*, add `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` under Colab ▸ Secrets (the key icon), and enter a model name.
-
-Colab limits how much free AI use each person gets. Two short prompts per pair should fit comfortably, but test it on a free account before the session.
+**Gemini built into Colab** (`google.colab.ai`) is offered for demonstration. It needs no key, but Colab limits free use, and once the limit is reached it returns an error. Don't rely on it for the whole room.
 
 ## Methods and their limits
 
