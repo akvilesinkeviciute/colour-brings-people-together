@@ -34,7 +34,7 @@ For the AI steps, the notebooks demonstrate with the Gemini model built into Col
 |---|---|
 | `Part_B_Audit_the_SDG_palette.ipynb` | Part B notebook |
 | `Part_C_Ground_an_AI_palette.ipynb` | Part C notebook |
-| `colour_masterclass.py` | The shared toolkit the notebooks load: colour maths (CIEDE2000, CAM16-UCS), the Colour Spinner connection, AI helpers, charts and tables |
+| `colour_masterclass.py` | The shared toolkit the notebooks load: colour science through the [colour-science](https://www.colour-science.org) library (CIEDE2000, CAM16-UCS), the Colour Spinner connection, AI helpers, charts and tables |
 | `FACILITATORS.md` | Notes for running the session, fallbacks, and methods and their limits |
 | `source/` | Scripts that generate the notebooks and the toolkit |
 

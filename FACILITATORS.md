@@ -41,6 +41,7 @@ Run both notebooks on the venue network if you can. In Part B, the *Ask the Colo
 | Problem | What participants do |
 |---|---|
 | Spinner API unreachable | Set `BACKEND` to *Copied from the browser*, then fill in the `SHEET` table from the Spinner's Namer and Mapper panels. Mapper RGB can be typed exactly as shown, e.g. `232 21 56`. |
+| Spinner simulations unreachable | Sections 3 and 5 of Part B and the re-check in Part C show a message. Once the connection is back, run `retry_simulations()` and rerun those cells. Meanwhile, use the Spinner's "Simulate age/CVD" menu in the browser. |
 | Colab's built-in Gemini busy or unavailable | Choose *Paste the reply myself*, copy the printed prompt into any AI chat and paste the reply into `AI_REPLY`. Surrounding chatter and code fences are ignored. |
 | Lost `partB_results.csv` | In Part C, choose *Type them in* and list `language, name` rows. |
 | No Google account | Do the whole audit in the Spinner's browser interface. The notebooks are optional enrichment, as stated in the proposal. |
@@ -57,17 +58,15 @@ Colab limits how much free AI use each person gets. Two short prompts per pair s
 
 ## Methods and their limits
 
-**Colour difference.** Colour difference is CIEDE2000 (ΔE00), checked against Sharma, Wu and Dalal's (2005) test pairs. The default threshold of 10 is a teaching heuristic for "reads as a different colour at a glance". It is adjustable with a slider.
+**Colour science.** All colour conversions and colour differences use the [colour-science](https://www.colour-science.org) library: `colour.sRGB_to_XYZ`, `colour.XYZ_to_Lab`, `colour.delta_E(..., method="CIE 2000")` and `colour.XYZ_to_CAM16UCS` with its default sRGB viewing conditions. Colab doesn't include the library, so the toolkit installs it the first time it loads, which adds about 15 seconds to the first cell. On loading, the toolkit also checks three reference values (sRGB red in CIELAB, Sharma et al.'s first CIEDE2000 test pair, and the CAM16-UCS lightness of white). If a future version of the library changes its units, participants get a clear message instead of wrong results.
 
-**Colour space.** CAM16-UCS follows Li et al. (2017), with sRGB viewing conditions (L_A = 64/π × 0.2, Y_b = 20, average surround). It reproduces the standard CAM16 worked example. It is used for the maps and for `de_ucs`.
+**Thresholds.** The default ΔE00 threshold of 10 is a teaching heuristic for "reads as a different colour at a glance", adjustable with a slider. The maps use CAM16-UCS (Li et al. 2017), the space the Colour Spinner works in.
 
-**Colour vision deficiency and ageing.** Both are simulated by the Colour Spinner's own models, the same ones behind its "Simulate age/CVD" menu, so the notebook matches what participants see in the browser. The age options are age bands: the menu's "Age 40" sends `16-40`, "Age 60" sends `40-60` and "Age 80" sends `60-80`. The notebooks show both the label and the band. Check with the Spinner's authors that "Age 40" really means the 16–40 group.
+**Colour vision deficiency and ageing.** Every simulation comes from the Colour Spinner's own models, the ones behind its "Simulate age/CVD" menu, so the notebooks match what participants see in the browser. The toolkit contains no simulation models of its own. The age options are age bands: the menu's "Age 40" sends `16-40`, "Age 60" sends `40-60` and "Age 80" sends `60-80`. The notebooks show both the label and the band. Check with the Spinner's authors that "Age 40" really means the 16–40 group.
 
-Each notebook asks for the simulations of all colours at once, six requests at a time, and caches them. Part B needs about 100 small requests per participant, and Part C a few dozen.
+Each notebook asks for the simulations of all its colours at once, six requests at a time, and caches them. Part B needs about 100 small requests per participant, and Part C a few dozen.
 
-If the Spinner cannot be reached, the notebook prints a warning and switches to local approximations for the rest of the session, and every note under the simulations says so:
-- **Colour vision deficiency:** Machado, Oliveira and Fernandes (2009) at severity 1.0.
-- **Ageing:** lens yellowing only, after van de Kraats and van Norren (2007), at ages 40, 60 and 80 rather than the Spinner's bands. Treat these as rough.
+If the Spinner's simulations can't be reached, the perceptual cells show a message instead of results, and the rest of the notebook still runs. Once the connection is back, run `retry_simulations()` and rerun those cells. Meanwhile, participants can use the "Simulate age/CVD" menu in the browser.
 
 **SDG colours.** The SDG hex values are the commonly published ones from the UN communications guidelines. Verify them against the current guidelines.
 
