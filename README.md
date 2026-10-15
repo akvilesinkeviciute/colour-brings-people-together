@@ -26,7 +26,7 @@ Part A, the *Colours of Babel* card game, needs no laptop.
 3. Run each cell in order with **Shift + Enter**. You only need to change the grey form fields on the right of some cells.
 4. At the end of Part B, download `partB_results.csv`; Part C starts from it.
 
-For the AI steps, the notebooks demonstrate with the Gemini model built into Colab, which needs no set-up. You're welcome to use any AI you regularly use instead: choose *Paste the reply from my own AI*, and the notebook gives you the prompt and a box to paste its reply into.
+For the AI steps, use the AI you use day to day (ChatGPT, Claude, Gemini, Copilot, …). The notebook gives you a prompt to copy into it and one box per answer, with the colour codes or names already filled in, so you only copy in your AI's answers. Colab's built-in Gemini is also available for demonstration, while Colab's free usage allows.
 
 ## What's in this repository
 
@@ -35,6 +35,7 @@ For the AI steps, the notebooks demonstrate with the Gemini model built into Col
 | `Part_B_Audit_the_SDG_palette.ipynb` | Part B notebook |
 | `Part_C_Ground_an_AI_palette.ipynb` | Part C notebook |
 | `colour_masterclass.py` | The shared toolkit the notebooks load: colour science through the [colour-science](https://www.colour-science.org) library (CIEDE2000, CAM16-UCS), the Colour Spinner connection, AI helpers, charts and tables |
+| `images/` | The Colour Spinner screenshot shown in Part B |
 | `FACILITATORS.md` | Notes for running the session, fallbacks, and methods and their limits |
 | `source/` | Scripts that generate the notebooks and the toolkit |
 
