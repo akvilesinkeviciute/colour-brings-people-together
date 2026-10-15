@@ -64,18 +64,17 @@ show('<table class="babel"><tr><th>Language</th><th>Names to test</th></tr>' + "
 
 md("""## 2 · Ask the AI system for the best example of each name
 
-The prompt asks for the colour that a native speaker would consider the **best example** of each name: the most typical instance, not the average and not a brand colour. As in Part B, Colab's built-in Gemini is used for demonstration, and you can use any AI you use regularly instead: choose *Paste the reply myself*, copy the prompt into your tool and paste its reply into `AI_REPLY`. Use the same AI system as in Part B so the two parts can be compared."""),
+The prompt asks for the colour that a native speaker would consider the **best example** of each name: the most typical instance, not the average and not a brand colour. As in Part B, Colab's built-in Gemini is used for demonstration, and you can use any AI you use regularly instead: choose *Paste the reply from my own AI* in the form below, and the next cell gives you the prompt and a box to paste the reply into. Use the same AI system as in Part B so the two parts can be compared."""),
 
-code("""items = "\\n".join(f"- {r.language}: {r['name']}" for _, r in names.iterrows())
+code("""items = "\\n".join(f"- {r.language}: {plain_with_roman(r)}" for _, r in names.iterrows())
 PROMPT_C = f\"\"\"You are helping with a cross-cultural colour naming study.
 For each colour name below, give the sRGB colour that native speakers of that language would consider
 the best example of the name: its most typical instance.
 
 {items}
 
-Reply with JSON only, as a list of objects like
-{{"language": "{names.language.iloc[0]}", "name": "{names['name'].iloc[0]}", "rgb": [r, g, b]}}
-with one object per name, in the same order.\"\"\"
+Reply with one line per name, and nothing else, in exactly this format (R, G, B from 0 to 255):
+{names.language.iloc[0]} | {names['name'].iloc[0]} | R, G, B\"\"\"
 print(PROMPT_C)"""),
 
 code("""#@title AI system
@@ -176,7 +175,7 @@ display(summary.reindex([l for l in LANGUAGES if l in summary.index]).round(1))"
 
 md("""## 4 · Ground the palette
 
-Every name whose AI colour is further than the threshold from the speakers' best example is replaced by that best example. Move the slider in the previous section to change the threshold; this section updates with it."""),
+An AI colour diverges from observed language use if it is too far from the name's best example, or if speakers would call it by a different name. Choose which rule to apply in the form; by default a colour is replaced if either is true. A replaced colour becomes the Colour Spinner's best example of the name. The distance threshold is the slider in section 3."""),
 
 code("""pal["grounded_hex"] = [s if isinstance(s, str) and (pd.isna(d) or d > DIVERGES_AT) else a
                        for a, s, d in zip(pal.ai_hex, pal.spinner_hex, pal.de00)]
@@ -332,3 +331,49 @@ _set(20, "export_palette(pal, LANGUAGES)")
 _set(22, """#@title Finding to share { run: "auto" }
 PICK_NAME = ""  #@param {type:"string"}
 show_finding(pal, PICK_NAME)""")
+
+
+# ── round trip: send the AI's colours back to the Spinner's Namer ──
+_i = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "plot_ai_vs_speakers" in "".join(c["source"]))
+cells[_i + 1:_i + 1] = [
+md("""### Would speakers call the AI's colour by that name?
+
+The distance above compares the AI's colour with a single point, the name's best example. But a name covers a range of colours, and the Spinner knows how speakers use it across that range. So send each AI colour back to the Spinner's Namer and ask what speakers would call it. If the answer is the name you gave the AI, the colour communicates as intended, even if it isn't the most typical example. If it's a different name, speakers would read the AI's colour as something else."""),
+code("""spinner = connect(BACKEND, SHEET)
+pal["rt_name"], pal["rt_conf"] = None, np.nan
+for k, row in pal.iterrows():
+    if isinstance(row.ai_hex, str):
+        namer = safe(spinner.name, row.ai_hex, row.language)   # what speakers call the AI's colour
+        if namer:
+            pal.at[k, "rt_name"], pal.at[k, "rt_conf"] = namer["name"], namer["confidence"]
+show_round_trip(pal)"""),
+]
+_g = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and 'pal["grounded_hex"]' in "".join(c["source"]))
+cells[_g] = code("""#@title Ground the palette { run: "auto" }
+REPLACE_WHEN = "Either"  #@param ["Either", "Too far from the best example", "Speakers would use a different name"]
+
+too_far = [pd.isna(d) or d > DIVERGES_AT for d in pal.de00]
+renamed = [isinstance(n, str) and not same_name(n, m, r)
+           for n, m, r in zip(pal.rt_name, pal.name, pal.get("romanized", pd.Series(None, index=pal.index)))]
+rule = {"Either": [a or b for a, b in zip(too_far, renamed)],
+        "Too far from the best example": too_far,
+        "Speakers would use a different name": renamed}[REPLACE_WHEN]
+
+# Replace the AI's colour with the speakers' best example wherever the rule says it diverges.
+pal["grounded_hex"] = [best if isinstance(best, str) and replace else ai
+                       for ai, best, replace in zip(pal.ai_hex, pal.spinner_hex, rule)]
+pal["replaced"] = pal.grounded_hex != pal.ai_hex
+show_grounded(pal, LANGUAGES)""", hidden=False)
+
+
+# ── AI step: choose first, then prompt (+ paste box), then read the reply ──
+_p = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "PROMPT_C = f" in "".join(c["source"]))
+_prompt_src = "".join(cells[_p]["source"]).replace("print(PROMPT_C)", "show_prompt(PROMPT_C, AI_PROVIDER)")
+_form = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "".join(c["source"]).startswith("#@title AI system"))
+_reply = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "".join(c["source"]).startswith("AI_REPLY ="))
+assert _p < _form < _reply
+cells[_p] = code('#@title Which AI?\nAI_PROVIDER = "Gemini built into Colab (no key needed)"  #@param ["Gemini built into Colab (no key needed)", "Paste the reply from my own AI", "Anthropic", "OpenAI-compatible"]\nAI_MODEL = ""  #@param {type:"string"}\nAI_BASE_URL = ""  #@param {type:"string"}\n#@markdown **Gemini built into Colab** needs nothing more: just run the cells below.\n#@markdown **Your own AI** (ChatGPT, Claude, Copilot, …): choose *Paste the reply from my own AI*; the next cell gives you the prompt and a box to paste the reply into.\n#@markdown *Anthropic* and *OpenAI-compatible* call an API with your own key from Colab ▸ Secrets (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`) and a model name. Leave AI_MODEL empty for Colab\'s default Gemini.')
+cells[_form] = code(_prompt_src)
+del cells[_reply]
+_r = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "reply_c = ai_reply" in "".join(c["source"]))
+cells[_r] = code("".join(cells[_r]["source"]).replace(", pasted=AI_REPLY", ""))

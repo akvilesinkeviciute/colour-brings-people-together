@@ -172,15 +172,20 @@ def parse_color_picker(page):
     tr_name = grab(r'data-translated-name="([^"]*)"')
     tr_title = grab(r'data-viz="translator".*?<h1[^>]*>(.*?)</h1>')
     tr_conf = grab(r'data-translation-confidence="([\d.eE+-]+)"')
+    roman = grab(r'id="most-likely-color-name"[^>]*data-romanized-name="([^"]*)"') or \
+            grab(r'data-romanized-name="([^"]*)"[^>]*id="most-likely-color-name"')
+    tr_roman = grab(r'data-translated-romanized="([^"]*)"')
     options = {_strip(n): int(v) for v, n in re.findall(r'<option value="(\d+)"[^>]*>(.*?)</option>', page)}
     if not name or conf is None:
         raise RuntimeError("The Colour Spinner's reply did not contain a Namer result; the site may have changed.")
     return {
         "name": _strip(name),
+        "romanized": _html.unescape(roman) if roman else None,
         "confidence": float(conf) / 100,
         "best_example": rgb_to_hex([int(x) for x in rgb[:3]]) if len(rgb) >= 3 else None,
         "translation": _strip(tr_title) if tr_title else (_html.unescape(tr_name) if tr_name else None),
         "translation_confidence": float(tr_conf) if tr_conf else None,
+        "translation_romanized": _html.unescape(tr_roman) if tr_roman else None,
         "name_ids": options,
     }
 
@@ -219,11 +224,13 @@ class ApiSpinner:
             self._ids.setdefault(language, {}).update({norm(n): i for n, i in res["name_ids"].items()})
             if res["best_example"]:
                 self._best[(language, norm(res["name"]))] = res["best_example"]
+                if res.get("romanized"):
+                    self._best.setdefault((language, norm(res["romanized"])), res["best_example"])
         return self._pages[key]
 
     def name(self, hex_, language):
         res = self.lookup(hex_, language)
-        return {"name": res["name"], "confidence": res["confidence"]}
+        return {"name": res["name"], "confidence": res["confidence"], "romanized": res.get("romanized")}
 
     def translate(self, name_or_hex, src, tgt):
         """Translate a colour (given as hex) from one language to another, as the Translator panel does."""
@@ -408,9 +415,28 @@ class SheetSpinner:
 
 
 def norm(s):
-    """Compare colour names ignoring case, accents and spacing (Κόκκινο == κοκκινο)."""
-    s = unicodedata.normalize("NFD", str(s).strip().lower())
-    return re.sub(r"\s+", " ", "".join(ch for ch in s if unicodedata.category(ch) != "Mn"))
+    """Compare colour names ignoring case, accents, spacing and punctuation
+    (Κόκκινο == κοκκινο; ς == σ)."""
+    s = unicodedata.normalize("NFD", str(s).strip().casefold()).replace("ς", "σ")
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s-]", "", s)).strip()
+
+def name_variants(text):
+    """'kokkino (κόκκινο)' -> ['kokkino', 'κόκκινο']: the name and anything in brackets,
+    so a reply in either script, or both, can be matched."""
+    text = str(text).strip().strip('"')
+    inner = re.findall(r"\(([^)]*)\)", text)
+    main = re.sub(r"\s*\([^)]*\)", "", text).strip()
+    parts = [main] + [p.strip() for chunk in inner for p in re.split(r"[,/;]", chunk)]
+    return [p for p in dict.fromkeys(parts) if p]
+
+def same_name(candidate, name, romanized=None):
+    """True if `candidate` (in any script, with or without a bracketed romanisation)
+    is the Spinner's `name` or its romanised spelling."""
+    if not isinstance(candidate, str) or not isinstance(name, str):
+        return False
+    targets = {norm(name)} | ({norm(romanized)} if isinstance(romanized, str) and romanized else set())
+    return any(norm(v) in targets for v in name_variants(candidate))
 
 def try_call(fn, *a, **k):
     try:
@@ -465,13 +491,13 @@ def ask_ai(prompt, provider=COLAB_AI, model="", base_url=""):
             json={"model": model, "messages": [{"role": "user", "content": prompt}]})
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"]
-    raise ValueError("Choose a provider, or paste the AI's reply into AI_REPLY.")
+    raise ValueError("Choose a provider in the form, or 'Paste the reply from my own AI'.")
 
 def parse_json_reply(text):
     """Pull the first JSON array/object out of an AI reply (ignores ``` fences and chatter)."""
     t = re.sub(r"```(?:json)?", "", text)
     start = min([i for i in (t.find("["), t.find("{")) if i >= 0], default=-1)
-    if start < 0: raise ValueError("No JSON found in the AI reply. Paste the reply into AI_REPLY, or choose a provider in the form.")
+    if start < 0: raise ValueError("No JSON found in the AI reply.")
     obj, _ = json.JSONDecoder().raw_decode(t[start:])
     return obj
 
@@ -556,10 +582,12 @@ def show_babel(table, languages):
     for _, r in table.iterrows():
         cells = ""
         for l in languages:
-            n, c = r.get(l), r.get(f"{l}|conf")
+            n, c, rom = r.get(l), r.get(f"{l}|conf"), r.get(f"{l}|rom")
             if isinstance(n, str):
                 w = 0 if pd.isna(c) else int(round(100 * c))
-                cells += (f'<td><b>{_h(n)}</b><div class="bar"><i style="width:{w}%"></i></div>'
+                extra = (f' <span style="color:{MUTED};font-size:11px">{_h(rom)}</span>'
+                         if isinstance(rom, str) and rom and norm(rom) != norm(n) else "")
+                cells += (f'<td><b>{_h(n)}</b>{extra}<div class="bar"><i style="width:{w}%"></i></div>'
                           f'<span style="color:{MUTED};font-size:11px">{w}% agree</span></td>')
             else:
                 cells += f'<td style="color:{MUTED}">—</td>'

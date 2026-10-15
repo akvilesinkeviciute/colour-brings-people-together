@@ -264,21 +264,22 @@ Now ask a current AI system to name the same colours in the same languages, and 
 
 **Which AI?** We demonstrate with the Gemini model built into Colab because it needs no set-up. It stands in for AI systems in general and isn't a recommendation. You are welcome to use the AI you use day to day (ChatGPT, Claude, Copilot, …) instead, and the comparison is often more meaningful that way.
 
+Choose in the form below:
+
 - **Colab's Gemini:** leave the form as it is and run the cells in order.
-- **Your own AI:** choose *Paste the reply myself* in the form, copy the printed prompt into your AI tool, and paste its whole reply into `AI_REPLY`."""),
+- **Your own AI:** choose *Paste the reply from my own AI*. The next cell shows the prompt to copy into your AI tool, and a box to paste its reply into. The reply can be in any reasonable layout: lines, a table or JSON."""),
 
 code("""lang_note = "; ".join(f"{l}" + (" (Otjiherero, spoken by the Himba of Namibia)" if l == "Himba" else "")
                       for l in LANGUAGES)
 PROMPT_B = f\"\"\"You are helping with a cross-cultural colour naming study.
 For each colour below, give the single colour name that most native speakers of each language would use for it.
-Write each name in that language and in its usual script.
+Write each name in that language and in its usual script; for a non-Latin script, add the Latin spelling in brackets.
 
 Languages: {lang_note}
 Colours (sRGB hex): {", ".join(SDG.hex[i] for i in PICK)}
 
-Reply with JSON only, as a list of objects like
-{{"hex": "#E5243B", "language": "{LANGUAGES[-1]}", "name": "..."}}
-with one object for every colour and language.\"\"\"
+Reply with one line for every colour and language, and nothing else, in exactly this format:
+#E5243B | {LANGUAGES[-1]} | name\"\"\"
 print(PROMPT_B)"""),
 
 code("""#@title AI system
@@ -322,7 +323,7 @@ ax.set_xlim(0, 1.1); ax.invert_yaxis(); ax.xaxis.set_major_formatter(mpl.ticker.
 ax.set_title("How often the AI agrees with speakers")
 plt.tight_layout(); plt.show()"""),
 
-md("""A match on a colour with low speaker agreement says little: when only a third of speakers use the top name, other answers are also defensible. Mismatches on high-agreement colours are the ones to bring to the group.
+md("""A match on a colour with low speaker agreement says little: when only a third of speakers use the top name, other answers are also defensible. So for every name that differs, the last column asks the Spinner's Mapper where the AI's name is centred for speakers of that language. If that colour is close to the SDG colour, the AI chose a plausible neighbouring name. If it is far away, or the name isn't one speakers use at all, the AI's name would mislead them. Large distances on high-agreement colours are the ones to bring to the group.
 
 ## 7 · Save your results for Part C
 
@@ -373,7 +374,8 @@ for sdg in PICK:
             problems.append(f"SDG {sdg} in {language}: {e}"); continue
         best = safe(spinner.best_example, namer["name"], language)  # Mapper: where that name is centred
         rows.append({"sdg": sdg, "hex": colour, "language": language,
-                     "name": namer["name"], "confidence": namer["confidence"], "best_example": best,
+                     "name": namer["name"], "romanized": namer.get("romanized"),   # Latin spelling, e.g. kokkino
+                     "confidence": namer["confidence"], "best_example": best,
                      "drift": de00(colour, best) if best else np.nan})  # how far the name pulls the colour
 naming = pd.DataFrame(rows)
 
@@ -393,7 +395,21 @@ _set(25, """reply_b = ai_reply(PROMPT_B, AI_PROVIDER, AI_MODEL, AI_BASE_URL, pas
 ai_names = read_ai_names(reply_b)
 
 comparison = naming.merge(ai_names, on=["hex", "language"], how="left")
-comparison["agrees"] = [isinstance(a, str) and norm(a) == norm(s)     # ignores case and accents
-                        for a, s in zip(comparison.ai_name, comparison.name)]
-show_name_comparison(comparison)
+comparison["agrees"] = [same_name(ai, name, rom)    # any script; ignores case and accents
+                        for ai, name, rom in zip(comparison.ai_name, comparison.name, comparison.romanized)]
+comparison = where_ai_names_point(comparison, spinner)   # Mapper: where each differing AI name is centred
+show_name_comparison(comparison, DISTINCT_AT)
 plot_agreement_by_language(comparison, LANGUAGES)""")
+
+
+# ── AI step: choose first, then prompt (+ paste box), then read the reply ──
+_p = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "PROMPT_B = f" in "".join(c["source"]))
+_prompt_src = "".join(cells[_p]["source"]).replace("print(PROMPT_B)", "show_prompt(PROMPT_B, AI_PROVIDER)")
+_form = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "".join(c["source"]).startswith("#@title AI system"))
+_reply = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "".join(c["source"]).startswith("AI_REPLY ="))
+assert _p < _form < _reply
+cells[_p] = code('#@title Which AI?\nAI_PROVIDER = "Gemini built into Colab (no key needed)"  #@param ["Gemini built into Colab (no key needed)", "Paste the reply from my own AI", "Anthropic", "OpenAI-compatible"]\nAI_MODEL = ""  #@param {type:"string"}\nAI_BASE_URL = ""  #@param {type:"string"}\n#@markdown **Gemini built into Colab** needs nothing more: just run the cells below.\n#@markdown **Your own AI** (ChatGPT, Claude, Copilot, …): choose *Paste the reply from my own AI*; the next cell gives you the prompt and a box to paste the reply into.\n#@markdown *Anthropic* and *OpenAI-compatible* call an API with your own key from Colab ▸ Secrets (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`) and a model name. Leave AI_MODEL empty for Colab\'s default Gemini.')
+cells[_form] = code(_prompt_src)
+del cells[_reply]
+_r = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "reply_b = ai_reply" in "".join(c["source"]))
+cells[_r] = code("".join(cells[_r]["source"]).replace(", pasted=AI_REPLY", ""))
