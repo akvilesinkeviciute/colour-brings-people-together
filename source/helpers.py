@@ -543,7 +543,10 @@ def answers_from_reply(reply, rows, kind):
     colours = rows.drop_duplicates("hex")
     langs = list(dict.fromkeys(rows.language))
     values = {}
-    numbers = colours.sdg.astype(int) if "sdg" in colours else range(1, len(colours) + 1)
+    numbers = list(colours.sdg.astype(int)) if "sdg" in colours else list(range(1, len(colours) + 1))
+    if not set(numbers) <= set(found) and len(found) == len(numbers):
+        # The AI renumbered the lines (1, 2, 3, … instead of 1, 6, 12, …): match them in order.
+        found = dict(zip(numbers, [found[k] for k in sorted(found)]))
     for n, hex_ in zip(numbers, colours.hex):
         parts = [p for p in re.split(r"\s*[|;]\s*", found.get(n, "")) if p.strip()]
         for k, part in enumerate(parts):
