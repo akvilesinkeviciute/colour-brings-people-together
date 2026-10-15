@@ -42,6 +42,6 @@ Educators are welcome to reuse the activities in their own teaching.
 
 ## References
 
-- Sinkeviciute, A., Stutters, J., Ahmed, R., Koliousis, A. and Mylonas, D. (2026). Colour Spinner: Coordinated multi-view visualisation for cross-linguistic colour communication. *IEEE Transactions on Visualization and Computer Graphics*, under review.
+- Sinkeviciute, A., Ahmed, R., Stutters, J., Koliousis, A. and Mylonas, D. (2026). Colour Spinner: Making cross-linguistic colour naming diversity visible. Under review.
 - Mylonas, D., Ahmed, R., Sinkeviciute, A. and Koliousis, A. (2026). Colour in translation: Data, models, and benchmarking for cross-linguistic colour naming. *CHI '26*. https://doi.org/10.1145/3772318.3791626
 - United Nations (2015). Sustainable Development Goals. https://sdgs.un.org/goals

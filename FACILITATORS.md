@@ -17,7 +17,7 @@ The Colour Spinner has no separate API. The notebooks make the same requests as 
 All of this lives in `SPINNER_API` and `ApiSpinner` in `colour_masterclass.py`. If the site changes, only those need updating.
 
 **Two assumptions to check:**
-- Languages are numbered in the order of the Spinner's language menu: 1 American English, 2 British English, 3 French, 4 Greek, 5 Himba, 6 Spanish. The saved reply confirms 4 is Greek.
+- Languages are numbered in the order of the Spinner's language menu: 1 American English, 2 British English, 3 French, 4 Greek, 5 OtjiHimba ("Himba" in the menu), 6 Spanish. The saved reply confirms 4 is Greek.
 - These are the website's internal requests, not a published API. Confirm with the Colour Spinner team that 10–25 people using them at once is fine, and run both notebooks on the venue network beforehand.
 
 ### 2. Hosting
@@ -62,7 +62,7 @@ Colab limits how much free AI use each person gets. Two short prompts per pair s
 
 **Thresholds.** The default ΔE00 threshold of 10 is a teaching heuristic for "reads as a different colour at a glance", adjustable with a slider. The maps use CAM16-UCS (Li et al. 2017), the space the Colour Spinner works in.
 
-**Colour vision deficiency and ageing.** Every simulation comes from the Colour Spinner's own models, the ones behind its "Simulate age/CVD" menu, so the notebooks match what participants see in the browser. The toolkit contains no simulation models of its own. The age options are age bands: the menu's "Age 40" sends `16-40`, "Age 60" sends `40-60` and "Age 80" sends `60-80`. The notebooks show both the label and the band. Check with the Spinner's authors that "Age 40" really means the 16–40 group.
+**Colour vision deficiency and ageing.** Every simulation comes from the Colour Spinner's own models, the ones behind its "Simulate age/CVD" menu, so the notebooks match what participants see in the browser. The toolkit contains no simulation models of its own. Protanopia, deuteranopia and tritanopia use linear transformation matrices (Viénot, Brettel and Mollon 1999). Ageing is lens yellowing at ages 40, 60 and 80 (Pokorny, Smith and Lutze 1987): the colour is matched to the nearest of 606 measured spectral chips and integrated against age-adjusted cone fundamentals in CIE LMS 2006. The menu sends the ages as the codes `16-40`, `40-60` and `60-80`. As the Colour Spinner paper notes, these simulations show how colours appear; the naming models were trained on observers with typical colour vision, so they don't show how people with CVD or older eyes name colours.
 
 Each notebook asks for the simulations of all its colours at once, six requests at a time, and caches them. Part B needs about 100 small requests per participant, and Part C a few dozen.
 
@@ -71,6 +71,8 @@ If the Spinner's simulations can't be reached, the perceptual cells show a messa
 **SDG colours.** The SDG hex values are the commonly published ones from the UN communications guidelines. Verify them against the current guidelines.
 
 **Comparing the AI with speakers.** Part B checks each AI name against the speakers' top name, and for names that differ, asks the Mapper where the AI's name is centred and how far that is from the SDG colour. Part C sends each AI colour back to the Namer (a round trip) to see whether speakers would call it by the intended name. By default, a colour is replaced if it is too far from the name's best example or speakers would call it something else; the form in section 4 switches between the two rules.
+
+**Naming confidence.** The Namer's confidence is the probability of the top-ranked term in the Spin Colour Forest naming distribution, read from a pre-classified grid of 7,072 CAM16-UCS points. It is not the Profiler's *Agreement* measure, and the notebooks call it confidence throughout. The best example of a name is its focal colour, the Mapper's top-left tile.
 
 **Name matching.** Names are compared ignoring case, accents, punctuation and Greek final sigma, so Κόκκινο matches κοκκινο. They are also compared across scripts. The Spinner gives a Latin spelling for each name (e.g. *kokkino*), and an AI answer counts as the same name if it gives the native word, that spelling, or both, as in "κόκκινο (kokkino)". Synonyms such as *Sky blue* and *Light blue* still count as different names, which is the point of the comparison.
 
