@@ -22,7 +22,7 @@ def make_module(path):
     base = (HERE / "toolkit.py").read_text()
     base = base.replace('print("Toolkit ready ✓  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))\n', "")
     head = ('"""Colour Brings People Together: toolkit for the BCS HCI 2026 masterclass notebooks.\n\n'
-            'Colour maths (CIEDE2000, CAM16-UCS), the Colour Spinner connection, AI helpers and the\n'
+            'Colour maths (CIELAB and CIEDE2000), the Colour Spinner connection, AI helpers and the\n'
             'charts and tables used in Parts B and C. Imported by the notebooks with\n'
             '`from colour_masterclass import *`.\n"""\n')
     import datetime

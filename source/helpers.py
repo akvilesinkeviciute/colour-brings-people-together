@@ -11,9 +11,10 @@ def _language_legend(ax, languages, loc="best", size=8):
               markeredgecolor=INK, markersize=size, label=l) for l in languages],
               frameon=False, loc=loc)
 
-def _ucs_axes(ax):
+def _lab_axes(ax):
+    """The CIELAB a*–b* plane, seen from above (lightness not shown)."""
     ax.axhline(0, color="#E4E4E0", lw=1, zorder=0); ax.axvline(0, color="#E4E4E0", lw=1, zorder=0)
-    ax.set_xlabel("a′  (green ← → red)", color=MUTED); ax.set_ylabel("b′  (blue ← → yellow)", color=MUTED)
+    ax.set_xlabel("a*  (green ← → red)", color=MUTED); ax.set_ylabel("b*  (blue ← → yellow)", color=MUTED)
 
 def _titles(ax, title, subtitle=""):
     """Bold title with a muted subtitle underneath, left-aligned and wrapped to the plot's width."""
@@ -50,7 +51,7 @@ def show_subset(pick, languages):
 @needs_simulations(default=(None, None))
 def nearest_neighbours(pick, conditions=CONDITIONS, among=None):
     """For each colour in `pick` and each condition: the nearest other colour among `among`
-    (by default the other test colours) and its ΔE00. Returns distances and neighbour ids."""
+    (by default the other test colours) and its ΔE₀₀. Returns distances and neighbour ids."""
     among = list(pick if among is None else among)
     def nearest(i, c):
         me = simulate(SDG.hex[i], c)
@@ -116,8 +117,9 @@ def plot_nearest_neighbours(nn_de, nn_id, threshold):
     below = int((nn_de.values < threshold).sum())
     _cell_grid(nn_de, threshold, [str(i) for i in pick],
                "How close is each test colour to its nearest neighbour in your palette?",
-               f"ΔE00 to the nearest other test colour under each condition; the small patch is that neighbour as it "
-               f"looks under the condition. Red: closer than {threshold}, "
+               f"Each cell: ΔE₀₀ between the simulated colours, i.e. between the test colour and its nearest other test colour, "
+               f"both simulated for that column (for example, ΔE₀₀ between deuteranopia-simulated colours). The small patch "
+               f"is that neighbour as it looks there. Red: closer than {threshold}, "
                f"so easily confused ({below} of {nn_de.size} cells).",
                row_chip_colours=[SDG.hex[i] for i in pick], neighbours=nn_id)
 
@@ -149,7 +151,7 @@ def show_at_risk(nn_de, nn_id, threshold):
             if nn_de.loc[i, c] < threshold:
                 pairs.setdefault(tuple(sorted((i, nn_id.loc[i, c]))), []).append((c, nn_de.loc[i, c]))
     if not pairs:
-        show(f"<b>No pairs at risk.</b> {small(f'Your test colours stay at least ΔE00 {threshold} apart under every condition.')}")
+        show(f"<b>No pairs at risk.</b> {small(f'Your test colours stay at least ΔE₀₀ {threshold} apart under every condition.')}")
         return
     rows = []
     for (i, j), hits in sorted(pairs.items(), key=lambda kv: min(d for _, d in kv[1])):
@@ -160,10 +162,11 @@ def show_at_risk(nn_de, nn_id, threshold):
         also = [x for x in dict.fromkeys(x for x, _ in hits) if x != c]
         why = CONDITION_WHY.get(c, "") + (f" Also below the threshold: {', '.join(also)}." if also else "")
         rows.append([two("Typical"), two(c),
-                     f'<span style="white-space:nowrap"><b>{typical:.1f} → {d:.1f}</b></span><br>{small("typical → " + _h(c))}',
+                     f'<span style="white-space:nowrap"><b>{typical:.1f} → {d:.1f}</b></span><br>'
+                     f'{small("between typical colours → between " + _h(sim_phrase(c)))}',
                      f'<span style="font-size:12.5px">{_h(why)}</span>'])
     show("<b>Pairs at risk, and why</b>")
-    table(["Typical vision", "Where they're closest", "ΔE00", "Why they look alike"], rows,
+    table(["Typical vision", "Where they're closest", "ΔE₀₀", "Why they look alike"], rows,
           "Each pair is shown with typical vision and under the condition where the two are closest.")
 
 def connect(backend, sheet=None):
@@ -333,13 +336,13 @@ def show_translatability(naming, pick, languages, threshold, source=None):
     heads = "".join(f'<th style="width:{W}px;text-align:left;padding:0 0 8px 0;font-weight:400;font-size:12px;white-space:nowrap;color:{MUTED}">'
                     f'{esc(l)}{(" (you)" if k == 0 else " · audience") if source else ""}</th>'
                     for k, l in enumerate(order))
-    note = ("Your column: ΔE00 between the test colour and your name's best example (focal colour). "
-            "Audience columns: ΔE00 between each audience name's focal colour and yours. " if source else
-            "Badges: ΔE00 between the test colour and each language's best example (focal colour). ")
+    note = ("Your column: ΔE₀₀ between the test colour and your name's best example (focal colour). "
+            "Audience columns: ΔE₀₀ between each audience name's focal colour and yours. " if source else
+            "Badges: ΔE₀₀ between the test colour and each language's best example (focal colour). ")
     show('<table style="table-layout:fixed;border-collapse:collapse">'
          f'<tr><th style="width:120px;text-align:left;padding:0 0 8px 0;font-weight:400;font-size:12px;color:{MUTED}">Test colour</th>'
          f'<th style="width:28px"></th>{heads}<th></th></tr>{rows}</table>'
-         f'<div class="note">{note}Spread: the largest ΔE00 between any two languages\' focal colours.</div>')
+         f'<div class="note">{note}Spread: the largest ΔE₀₀ between any two languages\' focal colours.</div>')
 
 def show_translations(spinner, naming, pick, you):
     """The Spinner's Translator: your language's name for each test colour, translated into every
@@ -370,11 +373,11 @@ def show_translations(spinner, naming, pick, you):
           "Translation confidence is how closely the two names are used for the same colours.")
 
 def plot_name_map(naming, pick, languages):
-    fig, ax = plt.subplots(figsize=(8, 6.2)); _ucs_axes(ax)
+    fig, ax = plt.subplots(figsize=(8, 6.2)); _lab_axes(ax)
     for i in pick:
-        o = rgb_to_cam16ucs(SDG.hex[i])
+        o = rgb_to_lab(SDG.hex[i])
         for _, r in naming[(naming.sdg == i) & naming.best_example.notna()].iterrows():
-            b = rgb_to_cam16ucs(r.best_example)
+            b = rgb_to_lab(r.best_example)
             ax.plot([o[1], b[1]], [o[2], b[2]], color=MUTED, lw=1, zorder=1)
             ax.scatter(b[1], b[2], s=90, marker=MARKERS.get(r.language, "o"), color=r.best_example,
                        edgecolor=INK, lw=0.7, zorder=3)
@@ -384,7 +387,7 @@ def plot_name_map(naming, pick, languages):
     _language_legend(ax, languages)
     ax.set_aspect("equal", adjustable="datalim")
     _titles(ax, "Where each language's name pulls the test colour",
-            "Top-down view of CAM16-UCS colour space. Large disc: the test colour. Lines lead to each "
+            "CIELAB a*–b* plane, seen from above. Large disc: the test colour. Lines lead to each "
             "language's best example (focal colour) for its name.")
     plt.tight_layout(); plt.show()
 
@@ -404,7 +407,7 @@ def _distances(ids, condition):
     return de.min(axis=1) if condition == WORST_CASE else de[condition]
 
 def scorecard(pick, naming, language=ALL_LANGUAGES, condition="Typical", normalise=SUBSET_MAX, audience=None):
-    """One row per test colour: its perceptual distance (ΔE00 to the nearest other SDG colour, under
+    """One row per test colour: its perceptual distance (ΔE₀₀ to the nearest other SDG colour, under
     `condition`) and naming confidence (in `language`, or averaged), both on a 0–1 scale."""
     de = _distances(pick, condition)
     if de is None:
@@ -436,61 +439,76 @@ def scorecard(pick, naming, language=ALL_LANGUAGES, condition="Typical", normali
     card.index.name = "SDG"
     return card
 
-def plot_two_axes(card, confusable_below, hard_below):
+def plot_two_axes(card, confusable_below=DELTA_E_THRESHOLD, hard_below=HARD_TO_NAME, top=40):
+    """Colour identity scorecard: naming confidence (across) against nearest-colour ΔE₀₀ (up),
+    on fixed axes so every palette is drawn on the same scale."""
     if card is None:
         return
-    lo, hi = card.attrs["lo"], card.attrs["hi"]
-    x_cut = (confusable_below - lo) / (hi - lo) if hi > lo else 0.5
-    fig, ax = plt.subplots(figsize=(7.5, 6.4))
-    ax.axvline(x_cut, color="#BDBDB8", ls="--", lw=1); ax.axhline(hard_below, color="#BDBDB8", ls="--", lw=1)
-    if 0 <= x_cut <= 1:
-        ax.scatter(x_cut, hard_below, s=900, facecolor="none", edgecolor="#BDBDB8", lw=2, zorder=2)
-    for x, y, t in [(0.02, 0.98, "named, but easily confused"), (0.98, 0.98, "robust on both axes"),
-                    (0.02, 0.02, "fragile on both axes"), (0.98, 0.02, "distinct, but hard to name")]:
-        ax.text(x, y, t, transform=ax.transAxes, ha="left" if x < .5 else "right",
-                va="top" if y > .5 else "bottom", color=MUTED, fontsize=10, style="italic")
-    for i, r in card.iterrows():
-        if pd.isna(r.confidence_0to1): continue
-        ax.scatter(r.perceptual_0to1, r.confidence_0to1, s=900, color=SDG.hex[i], edgecolor="white", lw=2.5, zorder=3)
-        ax.text(r.perceptual_0to1, r.confidence_0to1, str(i), ha="center", va="center",
-                color=ink_on(SDG.hex[i]), fontweight="bold", zorder=4)
-    ax.set_xlim(-0.05, 1.05); ax.set_ylim(-0.05, 1.05)
-    cond = card.attrs["condition"]
-    vision = "typical colour vision" if cond == "Typical" else ("worst case of all conditions" if cond == WORST_CASE else cond)
-    scale = "÷ largest in subset" if card.attrs["normalise"] == SUBSET_MAX else "scaled to all 17 SDG colours"
-    ax.set_xlabel(f"Perceptual distance (ΔE00 to nearest test colour, {vision}; {scale})")
+    fig, ax = plt.subplots(figsize=(7.6, 6.4))
+    zones = [((0, confusable_below), hard_below, top - confusable_below, "#F4F4F2", "Distinct, hard to name", "left", "top"),
+             ((hard_below, confusable_below), 1 - hard_below, top - confusable_below, "#E2EEE7", "Distinct + nameable", "right", "top"),
+             ((0, 0), hard_below, confusable_below, "#F6E9E2", "Confusable + hard to name", "left", "bottom"),
+             ((hard_below, 0), 1 - hard_below, confusable_below, "#F4F4F2", "Nameable, confusable", "right", "bottom")]
+    for (x, y), w, hgt, col, label, ha, va in zones:
+        ax.add_patch(mpl.patches.Rectangle((x, y), w, hgt, fc=col, ec="none", zorder=0))
+        ax.text(x + (0.02 if ha == "left" else w - 0.02), y + (hgt - top * 0.02 if va == "top" else top * 0.02), label,
+                ha=ha, va=va, fontsize=10.5, color="#5E5E5E", zorder=1)
+    ax.axvline(hard_below, color="#9A9A95", ls=(0, (4, 3)), lw=1.2, zorder=1)
+    ax.axhline(confusable_below, color="#9A9A95", ls=(0, (4, 3)), lw=1.2, zorder=1)
+    pts = [(i, r.confidence_0to1, min(r.dE00, top * 0.97), r.dE00) for i, r in card.iterrows()
+           if not (pd.isna(r.confidence_0to1) or pd.isna(r.dE00))]
+    # Two test colours that are each other's nearest neighbour share the same ΔE₀₀, so their discs can land on
+    # top of each other: nudge any overlapping discs apart sideways so every colour stays visible.
+    groups = []
+    for p_ in pts:
+        g = next((g for g in groups if abs(g[0][1] - p_[1]) < 0.06 and abs(g[0][2] - p_[2]) < top * 0.05), None)
+        (g.append(p_) if g else groups.append([p_]))
+    nudged = False
+    for g in groups:
+        for k, (i, x, y, raw) in enumerate(g):
+            dx = (k - (len(g) - 1) / 2) * 0.075
+            nudged |= len(g) > 1
+            ax.scatter(x + dx, y, s=900, color=SDG.hex[i], edgecolor=SURROUND, lw=1.5, zorder=3)
+            ax.text(x + dx, y, str(i), ha="center", va="center", color=ink_on(SDG.hex[i]), fontweight="bold",
+                    fontsize=12, zorder=4)
+            if raw > top:
+                ax.text(x + dx, y + top * 0.035, f"↑ {raw:.0f}", ha="center", va="bottom", fontsize=8.5, color=MUTED, zorder=4)
+    ax.set_xlim(0, 1); ax.set_ylim(0, top)
+    ax.set_xticks([0, hard_below, 1], ["Low", f"{hard_below:.0%}", "High"])
+    ax.set_yticks([0, confusable_below, 20, 30, top])
+    ax.spines["left"].set_color(INK); ax.spines["bottom"].set_color(INK)
     lab = card.attrs["language"]
-    ax.set_ylabel("Naming confidence (" + ("average of your audience" if lab == AUDIENCE_AVG else
-                  "average of all your languages" if lab == ALL_LANGUAGES else lab) + ")")
-    _titles(ax, "Naming confidence × perceptual distance",
-            "Each disc is a test colour. The dashed lines are your two thresholds; the grey circle marks where they meet.")
-    if not 0 <= x_cut <= 1:
-        ax.text(0.5, -0.16, f"The ΔE00 {confusable_below} line falls outside this scale.", transform=ax.transAxes,
-                ha="center", color=MUTED, fontsize=9)
+    who = ("your audience on average" if lab == AUDIENCE_AVG else "all your languages on average" if lab == ALL_LANGUAGES else lab)
+    ax.set_xlabel(f"Naming confidence ({who})")
+    ax.set_ylabel(f"Nearest-colour ΔE₀₀ (between {sim_phrase(card.attrs['condition']) if card.attrs['condition'] != WORST_CASE else 'simulated colours, worst case'})")
+    _titles(ax, "Colour identity scorecard",
+            f"Each disc is a test colour. Dashed lines: ΔE₀₀ {confusable_below:g} and {hard_below:.0%} confidence. "
+            "Fixed axes, so every palette is drawn on the same scale."
+            + (" Discs at the same position are set side by side." if nudged else ""))
     plt.tight_layout(); plt.show()
 
-def show_scorecard(card):
+def show_scorecard(card, top=40):
     if card is None:
         return
     langs = [c for c in card.columns if c not in ("dE00", "perceptual_0to1", "confidence_0to1")]
     rows = []
     for i, r in card.iterrows():
-        perc = f'<b>{r.perceptual_0to1:.2f}</b>{bar(r.perceptual_0to1)}{small(f"ΔE00 {r.dE00:.1f}")}'
+        perc = f'<b>{r.dE00:.1f}</b>{bar(r.dE00 / top)}{small("to the nearest test colour")}'
         conf = ("—" if pd.isna(r.confidence_0to1) else
-                f'<b>{r.confidence_0to1:.2f}</b>{bar(r.confidence_0to1)}{small("naming confidence")}')
+                f'<b>{r.confidence_0to1:.0%}</b>{bar(r.confidence_0to1)}{small("naming confidence")}')
         names = []
         for l in langs:
             m = re.match(r"(.*) \((\d+)%\)$", r[l] or "")
             names.append(f'<b>{_h(m.group(1))}</b>{bar(int(m.group(2)) / 100)}{small(m.group(2) + "% confidence")}'
                          if m else small("—"))
         rows.append([framed(SDG.hex[i], str(i)), perc, conf] + names)
-    table(["Test colour", "Perceptual (0–1)", "Confidence (0–1)"] + [_h(l) for l in langs], rows, valign="top", note=
-          "Perceptual: distance to the nearest SDG colour, scaled 0–1. Confidence: the Spinner's confidence in its top name.")
+    table(["Test colour", "ΔE₀₀", "Confidence"] + [_h(l) for l in langs], rows, valign="top")
 
 # ── Part B: the AI's names ────────────────────────────────────────────────
 # ── Asking the AI, and reading its reply ─────────────────────────────────
 PASTE = "Paste answers from my own AI"
 _ANS = {"boxes": [], "rows": None, "kind": None}
+
 
 def numbered_items(rows, kind):
     """The numbered list shared by the prompt and the boxes.
@@ -547,15 +565,27 @@ def collected_answers():
     return t
 
 def answers_from_reply(reply, rows, kind):
-    """Read a numbered reply into the same table as the boxes.
-    kind='name': '1. British English: Red | Greek: Κόκκινο | …'; kind='colour': '1. #E5243B'."""
+    """Read the AI's reply into the same table as the boxes. Numbers are optional and blank lines are fine:
+    kind='name': '1. British English: Red | Greek: Κόκκινο | …' (or the same without '1.');
+    kind='colour': '1. #E5243B' (or just '#E5243B'), one line per name, in order."""
+    text = re.sub(r"```\w*", "", reply)
     found = {}
-    for line in re.sub(r"```\w*", "", reply).splitlines():
-        m = re.match(r"\s*\**\s*(\d+)\s*[.):\-]\s*(.+?)\s*$", line)
+    for line in text.splitlines():
+        m = re.match(r"\s*\**\s*(\d+)\s*[.):\-]\s+(.+?)\s*$", line) or re.match(r"\s*\**\s*(\d+)\s*[.):]\s*(.+?)\s*$", line)
         if m:
             found.setdefault(int(m.group(1)), m.group(2).strip())
+    def looks_like_answer(line):
+        line = line.strip()
+        if kind == "colour":
+            return bool(_HEX.search(line)) or len(re.findall(r"\b\d{1,3}\b", line)) == 3
+        return "|" in line or bool(re.search(r"\b(" + "|".join(map(re.escape, SPINNER_LANGUAGES + ["Himba"])) + r")\s*:", line, re.I))
+    expected = rows.drop_duplicates("hex").shape[0] if kind == "name" else len(rows)
+    if not found or len(found) < expected and len(found) < 2:
+        plain = [re.sub(r"^\s*([-*•]|\d+\s*[.):\-])\s*", "", l).strip() for l in text.splitlines() if looks_like_answer(l)]
+        if plain:
+            found = dict(enumerate(plain, 1))
     if not found:
-        raise ValueError("Couldn't find numbered answers ('1. …') in the AI's reply.")
+        raise ValueError("Couldn't find the answers in the AI's reply.")
     rows = rows.reset_index(drop=True)
     clean = lambda v: re.sub(r"[*_`]", "", v).strip().strip('"').strip()
     if kind == "colour":
@@ -720,7 +750,7 @@ def show_name_comparison(cmp, threshold=10):
             else:
                 where = ""
                 if isinstance(r.get("ai_best"), str):
-                    where = f' {swatch(r.ai_best, 22, 14)} {small(f"ΔE00 {r.ai_drift:.1f}")}'
+                    where = f' {swatch(r.ai_best, 22, 14)} {small(f"ΔE₀₀ {r.ai_drift:.1f}")}'
                 elif r.get("ai_status"):
                     where = " " + small(_h(r.ai_status))
                 ai = f'{pill("AI: " + _h(r.ai_name), "bad")}<div style="margin-top:4px">{where}</div>'
@@ -728,7 +758,7 @@ def show_name_comparison(cmp, threshold=10):
         rows.append([framed(hex_, str(sdg))] + cells)
     table(["Test colour"] + [_h(l) for l in langs], rows, valign="top", note=
           "Each cell: the speakers' top name (Spinner) and its confidence, then the AI's answer. For a name that differs: "
-          "the Spinner's best example of the AI's name and its ΔE00 from the test colour. Small: a plausible neighbouring "
+          "the Spinner's best example of the AI's name and its ΔE₀₀ from the test colour. Small: a plausible neighbouring "
           "name. Large: the name means a different colour to speakers.")
 
 def plot_agreement_by_language(cmp, languages):
@@ -840,7 +870,7 @@ def add_best_examples(pal, spinner):
 
 # ── Part C: round trip ────────────────────────────────────────────────────
 def show_comparison(pal, threshold):
-    """For each name: the AI's colour, the speakers' best example, the ΔE00 between them, and what speakers
+    """For each name: the AI's colour, the speakers' best example, the ΔE₀₀ between them, and what speakers
     would call the AI's colour (the round trip)."""
     top = max(2 * threshold, float(np.nanmax(pal["de00"])) if pal["de00"].notna().any() else 1)
     rows, last = [], None
@@ -862,8 +892,8 @@ def show_comparison(pal, threshold):
         else:
             called = small("not looked up")
         rows.append([lang, f"<b>{_h(r['name'])}</b>", ai, best, dist, called])
-    table(["Language", "Name", "AI's colour", "Speakers' best example", "ΔE00 between them", "Speakers call the AI's colour"],
-          rows, note=f"ΔE00 ≈ 1 is just noticeable side by side; above {threshold:g} (red) the two read as different colours. "
+    table(["Language", "Name", "AI's colour", "Speakers' best example", "ΔE₀₀ between them", "Speakers call the AI's colour"],
+          rows, note=f"ΔE₀₀ ≈ 1 is just noticeable side by side; above {threshold:g} (red) the two read as different colours. "
                      "The last column sends the AI's colour back to the Spinner's Namer: if speakers would use a different "
                      "name for it, the AI's colour says something else.")
 
@@ -887,9 +917,9 @@ def show_round_trip(pal):
 def plot_ai_vs_speakers(pal, languages, threshold):
     ok = pal.dropna(subset=["ai_hex", "spinner_hex"])
     if ok.empty: return
-    fig, ax = plt.subplots(figsize=(7.6, 6.6)); _ucs_axes(ax)
+    fig, ax = plt.subplots(figsize=(7.6, 6.6)); _lab_axes(ax)
     for _, r in ok.iterrows():
-        a, s = rgb_to_cam16ucs(r.ai_hex), rgb_to_cam16ucs(r.spinner_hex)
+        a, s = rgb_to_lab(r.ai_hex), rgb_to_lab(r.spinner_hex)
         far = r.de00 > threshold
         ax.annotate("", xy=(s[1], s[2]), xytext=(a[1], a[2]),
                     arrowprops=dict(arrowstyle="-|>", color="#B4342D" if far else "#9A9A95", lw=1.2 if far else 0.9,
@@ -900,8 +930,8 @@ def plot_ai_vs_speakers(pal, languages, threshold):
     _language_legend(ax, languages)
     ax.set_aspect("equal", adjustable="datalim")
     _titles(ax, "From the AI's colour to the speakers' best example",
-            f"Top-down view of CAM16-UCS colour space. Small marker: the AI's colour. Large marker: the speakers' "
-            f"best example. Red arrows: more than ΔE00 {threshold:g} apart.")
+            f"CIELAB a*–b* plane, seen from above. Small marker: the AI's colour. Large marker: the speakers' "
+            f"best example. Red arrows: more than ΔE₀₀ {threshold:g} apart.")
     plt.tight_layout(); plt.show()
 
 def error_summary(pal, languages, threshold):
@@ -916,7 +946,7 @@ def error_summary(pal, languages, threshold):
         rows.append([f"<b>{_h(l)}</b>", f'<b>{g.de00.mean():.1f}</b>{bar(g.de00.mean() / top, None, 160)}',
                      f"<b>{g.de00.max():.1f}</b>", pill(f"{n_bad} of {len(g)}", "bad" if n_bad else "good")])
     show("<b>Errors by language</b>")
-    table(["Language", "Mean ΔE00", "Worst ΔE00", f"Above {threshold:g}"], rows)
+    table(["Language", "Mean ΔE₀₀", "Worst ΔE₀₀", f"Above {threshold:g}"], rows)
 
 # ── Part C: grounding ─────────────────────────────────────────────────────
 def show_grounded(pal, languages):
@@ -941,7 +971,7 @@ def show_grounded(pal, languages):
 
 @needs_simulations(default=None)
 def repair_palettes(pal, spinner, languages, threshold, candidates=8):
-    """Where a grounded palette has two colours closer than `threshold` (ΔE00) under any viewing
+    """Where a grounded palette has two colours closer than `threshold` (ΔE₀₀) under any viewing
     condition, swap one of them for another colour speakers still call by the same name (the next
     tiles in the Spinner's Mapper), choosing the swap that best separates the palette."""
     from itertools import combinations
@@ -996,7 +1026,7 @@ def repair_palettes(pal, spinner, languages, threshold, candidates=8):
 def show_repairs(pal, threshold):
     log = pal.attrs.get("repairs", [])
     if not log:
-        show(f"<b>No perceptual problems.</b> {small(f'Every grounded palette keeps its colours at least ΔE00 {threshold:g} apart under every condition.')}")
+        show(f"<b>No perceptual problems.</b> {small(f'Every grounded palette keeps its colours at least ΔE₀₀ {threshold:g} apart under every condition.')}")
         return
     rows = []
     for e in log:
@@ -1011,13 +1041,13 @@ def show_repairs(pal, threshold):
         rows.append([f"<b>{_h(e['language'])}</b>", f'{_h(e["pair"][0])} & {_h(e["pair"][1])}<br>{small("closest under " + _h(e["condition"]))}',
                      what, change, result])
     show("<b>Perceptual repairs</b>")
-    table(["Language", "Pair too close", "Colour changed", "Before → after", "Closest ΔE00"], rows,
+    table(["Language", "Pair too close", "Colour changed", "Before → after", "Closest ΔE₀₀"], rows,
           "Each replacement is another colour speakers call by the same name, taken from the Colour Spinner's Mapper "
           "(its tiles run from the most to the least typical), chosen to separate the palette most.")
 
 @needs_simulations()
 def closest_pairs(pal, languages, conditions=CONDITIONS):
-    """For each language: the smallest ΔE00 between any two of its colours, AI vs grounded."""
+    """For each language: the smallest ΔE₀₀ between any two of its colours, AI vs grounded."""
     from itertools import combinations
     def min_pair(hexes, c):
         hs = [simulate(h, c) for h in hexes if isinstance(h, str)]
@@ -1028,12 +1058,36 @@ def closest_pairs(pal, languages, conditions=CONDITIONS):
             for l in languages for v, col in [("AI", "ai_hex"), ("Grounded", "grounded_hex")]]
     return pd.DataFrame(rows).set_index(["language", "palette"])
 
+@needs_simulations()
+def show_closest_pairs(pal, languages, threshold=DELTA_E_THRESHOLD, conditions=CONDITIONS):
+    """For each language's AI and grounded palette, and each condition: the two colours that are closest,
+    as they look there, and the ΔE₀₀ between them."""
+    from itertools import combinations
+    prefetch_simulations([h for h in pd.concat([pal.ai_hex, pal.grounded_hex]) if isinstance(h, str)])
+    rows = []
+    for lang in languages:
+        p = pal[pal.language == lang]
+        for label, col in [("AI", "ai_hex"), ("Grounded", "grounded_hex")]:
+            hexes = [h for h in p[col] if isinstance(h, str)]
+            if len(hexes) < 2: continue
+            cells = []
+            for c in conditions:
+                d, a, b = min((de00(simulate(x, c), simulate(y, c)), x, y) for x, y in combinations(hexes, 2))
+                sw = (f'<div style="display:flex;gap:4px;margin-bottom:4px">{swatch(simulate(a, c), 30, 22)}'
+                      f'{swatch(simulate(b, c), 30, 22)}</div>')
+                cells.append(sw + pill(f"{d:.1f}", "bad" if d < threshold else "good"))
+            rows.append([f"<b>{_h(lang)}</b><br>{small(label)}"] + cells)
+    show("<b>Can every viewer still tell each palette's colours apart?</b>")
+    table(["Palette"] + [_h(c) for c in conditions], rows, valign="top",
+          note=f"Each cell: the two closest colours of that palette as they look in that column, and the ΔE₀₀ between the "
+               f"simulated colours (for example, between deuteranopia-simulated colours). Red: below {threshold:g}.")
+
 def plot_closest_pairs(check, threshold):
     if check is None: return
     below = int((check.values < threshold).sum())
     _cell_grid(check, threshold, [f"{l} · {v}" for l, v in check.index],
                "Can every viewer still tell each palette's colours apart?",
-               f"Smallest ΔE00 between any two colours in the palette. Red: closer than {threshold} "
+               f"Smallest ΔE₀₀ between any two colours in the palette. Red: closer than {threshold} "
                f"({below} of {int(np.isfinite(check.values).sum())} cells).")
 
 @needs_simulations()
@@ -1208,7 +1262,7 @@ def show_finding(pal, name=""):
        <div class="cap">AI system<div class="hex">{row.ai_hex}</div></div></div>
   <div class="tile"><div class="chip" style="background:{row.spinner_hex};color:{ink_on(row.spinner_hex)};height:80px">Speakers</div>
        <div class="cap">Best example<div class="hex">{row.spinner_hex}</div></div></div>
-  <div style="color:#fff;align-self:center;padding-left:8px;font-size:15px">ΔE00<br><b style="font-size:30px">{row.de00:.1f}</b></div>
+  <div style="color:#fff;align-self:center;padding-left:8px;font-size:15px">ΔE₀₀<br><b style="font-size:30px">{row.de00:.1f}</b></div>
 </div>
 {rt_line}
 <p style="margin:0 0 8px">Talk it through with your partner:</p>
@@ -1258,7 +1312,7 @@ def save_finding(pal, name="", pattern="", designer_fix="", stem="my_finding"):
         ax.add_patch(mpl.patches.FancyBboxPatch((x, 1.0), 1.75, 1.0, boxstyle="round,pad=0,rounding_size=0.05", fc=hex_, ec="none"))
         ax.text(x + 0.1, 1.85, "AI" if k == 0 else "Speakers", fontsize=11, fontweight="bold", color=_ink_on(hex_))
         ax.text(x, 2.3, f"{lab} · {hex_}", fontsize=8.5, color="white")
-    ax.text(4.65, 1.3, "ΔE00", fontsize=10, color="white"); ax.text(4.65, 1.95, f"{row.de00:.1f}", fontsize=24, fontweight="bold", color="white")
+    ax.text(4.65, 1.3, "ΔE₀₀", fontsize=10, color="white"); ax.text(4.65, 1.95, f"{row.de00:.1f}", fontsize=24, fontweight="bold", color="white")
     y = 2.95
     if data["speakers_call_ai_colour"]:
         ax.text(0.3, y, f"Speakers would call the AI's colour “{data['speakers_call_ai_colour']}”"

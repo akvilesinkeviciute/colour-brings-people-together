@@ -1,3 +1,4 @@
+import re
 from nbtools import md, code, loader_cell
 
 TITLE = "Part C — Creating an empirically grounded colour palette"
@@ -160,7 +161,7 @@ ax.scatter(np.zeros(len(order)), y, s=60, c=order.ai_hex.tolist(), edgecolor=INK
 ax.axvline(ReplaceAbove, color=INK, ls="--", lw=1)
 ax.text(ReplaceAbove, len(order) - 0.4, f"  replace above {ReplaceAbove}", fontsize=9, color=MUTED, va="bottom")
 ax.set_yticks(y, [f"{n}  ({l})" for n, l in zip(order.name, order.language)])
-ax.set_xlabel("ΔE00 between the AI's colour and the best example"); ax.set_xlim(left=-1)
+ax.set_xlabel("ΔE₀₀ between the AI's colour and the best example"); ax.set_xlim(left=-1)
 ax.legend(handles=[mpl.lines.Line2D([], [], marker="o", ls="", color="#BDBDB8", markeredgecolor=INK,
                    markersize=6, label="AI's colour"),
                    mpl.lines.Line2D([], [], marker="o", ls="", color="#BDBDB8", markeredgecolor="white",
@@ -198,9 +199,9 @@ show(f'<div class="note">{int(pal.replaced.sum())} of {int(pal.grounded_hex.notn
 
 md("""### Does the grounded palette still work for every viewer?
 
-Grounding fixes the cognitive axis, but best examples of neighbouring names can sit close together. Check the perceptual axis again: for each language's palette, the smallest ΔE00 between any two of its colours under each viewing condition.
+Grounding fixes the cognitive axis, but best examples of neighbouring names can sit close together. Check the perceptual axis again: for each language's palette, the smallest ΔE₀₀ between any two of its colours under each viewing condition.
 
-**A note on the distances.** All colour differences here are CIEDE2000 (ΔE00). CIEDE2000 was derived from colour-difference judgements by observers with typical colour vision. Applied to simulated colours, it estimates how different those colours would look to a typical observer, which only approximates what people with a colour vision deficiency or an older eye can tell apart."""),
+**A note on the distances.** All colour differences here are CIEDE2000 (ΔE₀₀). CIEDE2000 was derived from colour-difference judgements by observers with typical colour vision. Applied to simulated colours, it estimates how different those colours would look to a typical observer, which only approximates what people with a colour vision deficiency or an older eye can tell apart."""),
 
 code("""def min_pair(hexes, cond):
     from itertools import combinations
@@ -227,7 +228,7 @@ ax.set_yticks(range(len(check)), [f"{l} · {v}" for l, v in check.index])
 for r in range(2, len(check), 2): ax.axhline(r - 0.5, color="white", lw=3)
 ax.tick_params(length=0)
 for s in ax.spines.values(): s.set_visible(False)
-ax.set_title("Closest pair in each palette under each condition (ΔE00)")
+ax.set_title("Closest pair in each palette under each condition (ΔE₀₀)")
 plt.tight_layout(); plt.show()
 
 langs_shown = [l for l in LANGUAGES if (pal[pal.language == l].grounded_hex.notna()).sum() > 1]
@@ -287,7 +288,7 @@ show(f\"\"\"<div class="card">
        <div class="cap">AI system<div class="hex">{row.ai_hex}</div></div></div>
   <div class="tile"><div class="chip" style="background:{row.spinner_hex};color:{_ink_on(row.spinner_hex)};height:80px">Speakers</div>
        <div class="cap">Best example<div class="hex">{row.spinner_hex}</div></div></div>
-  <div style="color:#fff;align-self:center;padding-left:8px;font-size:15px">ΔE00<br><b style="font-size:30px">{row.de00:.1f}</b></div>
+  <div style="color:#fff;align-self:center;padding-left:8px;font-size:15px">ΔE₀₀<br><b style="font-size:30px">{row.de00:.1f}</b></div>
 </div>
 <p style="margin:0 0 8px">Talk it through with your partner:</p>
 <p style="margin:0 0 4px"><b>What pattern of failure does this reveal?</b> Did the AI default to a Western-centric focal colour,
@@ -296,7 +297,7 @@ collapse a distinction the language maintains, or produce a colour that fails un
 </div>\"\"\")"""),
 
 md("""---
-*Colour Spinner: Sinkeviciute, Ahmed, Stutters, Koliousis & Mylonas (2026), under review. Spin Colour Forest and the AI colour-naming benchmark: Mylonas, Ahmed, Sinkeviciute & Koliousis, CHI 2026. Colour vision deficiency and age simulations from the Colour Spinner. Colour science with the colour-science library; CAM16-UCS after Li et al. (2017).*"""),
+*Colour Spinner: Sinkeviciute, Ahmed, Stutters, Koliousis & Mylonas (2026), under review. Spin Colour Forest and the AI colour-naming benchmark: Mylonas, Ahmed, Sinkeviciute & Koliousis, CHI 2026. Colour vision deficiency and age simulations from the Colour Spinner. Colour science with the colour-science library: CIELAB and CIEDE2000.*"""),
 ]
 
 
@@ -331,7 +332,7 @@ _set(18, """#@title Can every viewer tell the colours apart? { run: "auto" }
 ConfusableBelow = 10  #@param {type:"slider", min:3, max:25, step:1}
 #@markdown Two colours closer than this CIEDE2000 colour difference count as easily confused, as in Part B.
 
-check = closest_pairs(pal, LANGUAGES)      # smallest ΔE00 within each palette, per condition
+check = closest_pairs(pal, LANGUAGES)      # smallest ΔE₀₀ within each palette, per condition
 plot_closest_pairs(check, ConfusableBelow)
 show_grounded_conditions(pal, LANGUAGES)""", hidden=False)
 _set(20, "export_palette(pal, LANGUAGES)")
@@ -390,7 +391,7 @@ cells[_r] = code("".join(cells[_r]["source"]).replace(", pasted=AI_REPLY", ""))
 def _find(pred):
     return next(k for k, c in enumerate(cells) if pred("".join(c["source"]), c["cell_type"]))
 cells[_find(lambda s, t: t == "code" and s.startswith("#@title Which AI?"))] = code('#@title Which AI?\nAI = "Paste answers from my own AI"  #@param ["Paste answers from my own AI", "Gemini built into Colab"]\n#@markdown **Your own AI** (ChatGPT, Claude, Gemini, Copilot, …): the next cell shows a prompt to copy into it and one box per name. The names are filled in for you; just copy in the colour code (#RRGGBB) your AI gives for each.\n#@markdown **Gemini built into Colab** is for demonstration. It needs no set-up but stops working once Colab\'s free usage limit is reached.')
-cells[_find(lambda s, t: t == "code" and "PROMPT_C = f" in s)] = code('lines = "\\n".join(f"{r.language} | {plain_with_roman(r)}" for _, r in names.iterrows())\nfirst = names.iloc[0]\nPROMPT_C = f"""You are helping with a cross-cultural colour naming study.\nFor each colour name below, give the sRGB colour, as a hex code, that native speakers of that language\nwould consider the best example of the name: its most typical instance.\n\n{lines}\n\nReply with exactly one line for each, in this format and nothing else:\n{first.language} | {first[\'name\']} | #RRGGBB"""\nshow_prompt(PROMPT_C, AI, rows=names, kind="colour")')
+cells[_find(lambda s, t: t == "code" and "PROMPT_C = f" in s)] = code('lines = "\\n".join(f"{r.language} | {plain_with_roman(r)}" for _, r in names.iterrows())\nfirst = names.iloc[0]\nPROMPT_C = f"""You are helping with a cross-cultural colour naming study.\nFor each colour name below, give the colour, as a hex code, that native speakers of that language\nwould consider the best example of the name: its most typical instance.\n\n{lines}\n\nReply with exactly one line for each, in this format and nothing else:\n{first.language} | {first[\'name\']} | #RRGGBB"""\nshow_prompt(PROMPT_C, AI, rows=names, kind="colour")')
 cells[_find(lambda s, t: t == "code" and "PROMPT_C, AI" in s and "show_ai_palette" in s)] = code('if AI == PASTE:\n    pal = read_ai_colours(collected_answers(), names)    # the colour codes typed into the boxes\nelse:\n    pal = read_ai_colours(ask_ai(PROMPT_C, AI), names)\nshow_ai_palette(pal)')
 
 
@@ -410,7 +411,7 @@ for _k, _c in enumerate(cells):
 
 
 # ── numbered prompt and numbered answer boxes ──
-cells[_find(lambda s, t: t == "code" and "PROMPT_C = f" in s)] = code('lines = "\\n".join(numbered_items(names, "colour"))\nPROMPT_C = f"""You are helping with a cross-cultural colour naming study.\nFor each numbered colour name below, give the sRGB colour, as a hex code, that native speakers of that language would consider the best example of the name: its most typical instance.\n\n{lines}\n\nReply with one line per number, in this format and nothing else:\n1. #RRGGBB\n2. …"""\nshow_prompt(PROMPT_C, AI, rows=names, kind="colour")')
+cells[_find(lambda s, t: t == "code" and "PROMPT_C = f" in s)] = code('lines = "\\n".join(numbered_items(names, "colour"))\nPROMPT_C = f"""You are helping with a cross-cultural colour naming study.\nFor each numbered colour name below, give the colour, as a hex code, that native speakers of that language would consider the best example of the name: its most typical instance.\n\n{lines}\n\nReply with one line per number, in this format and nothing else:\n1. #RRGGBB\n2. …"""\nshow_prompt(PROMPT_C, AI, rows=names, kind="colour")')
 _k = _find(lambda s, t: t == "code" and 'pal = read_ai_colours(ask_ai(PROMPT_C, AI), names)' in s)
 cells[_k] = code("".join(cells[_k]["source"]).replace('pal = read_ai_colours(ask_ai(PROMPT_C, AI), names)', 'pal = read_ai_colours(answers_from_reply(ask_ai(PROMPT_C, AI), names, "colour"), names)'))
 
@@ -540,7 +541,7 @@ for k, row in pal.iterrows():                           # round trip: what speak
 pal = pal.sort_values(["language", "de00"], ascending=[True, False]).reset_index(drop=True)
 show_comparison(pal, ReplaceAbove)
 error_summary(pal, LANGUAGES, ReplaceAbove)""", hidden=False),
-md("""The same comparison as a map, in the top-down view of CAM16-UCS colour space used in Part B. Arrows that all point the same way for one language suggest a systematic bias, for instance towards English focal colours."""),
+md("""The same comparison as a map, on the CIELAB a*–b* plane used in Part B. Arrows that all point the same way for one language suggest a systematic bias, for instance towards English focal colours."""),
 code("plot_ai_vs_speakers(pal, LANGUAGES, ReplaceAbove)"),
 md("""## 4 · Ground the palette
 
@@ -548,7 +549,7 @@ One cell, two steps. **Ground:** each AI colour that diverges from how speakers 
 
 The chart underneath compares each language's AI palette with its grounded one under all seven conditions. If a pair still falls below the threshold, you've found a real design tension: consider a second cue such as a pattern, label or icon, or drop one name.
 
-All colour differences are CIEDE2000 (ΔE00), derived from judgements by observers with typical colour vision; for simulated colours they only approximate what people with a colour vision deficiency or an older eye can tell apart."""),
+All colour differences are CIEDE2000 (ΔE₀₀), derived from judgements by observers with typical colour vision; for simulated colours they only approximate what people with a colour vision deficiency or an older eye can tell apart."""),
 code("""#@title Ground and repair { run: "auto" }
 ReplaceWhen = "Either"  #@param ["Either", "Too far from the best example", "Speakers would use a different name"]
 ConfusableBelow = 10  #@param {type:"slider", min:3, max:25, step:1}
@@ -587,3 +588,30 @@ md("""## 7 · Your most striking finding
 The card shows the name where the AI's colour was furthest from what speakers mean; type another name to choose a different one. Then add your interpretation and save the card for the plenary."""),
 _finding, _save, _footer,
 ]
+
+
+# ── collaborator feedback, October 2026 ──
+def _src(c): return "".join(c["source"])
+for _k, _c in enumerate(cells):
+    if _c["cell_type"] != "code": continue
+    _s = _src(_c)
+    if _s.startswith("#@title Compare"):
+        _s = _s.split("\n", 1)[1]
+        _s = re.sub(r"ReplaceAbove = 10  #@param[^\n]*\n#@markdown[^\n]*\n", "ReplaceAbove = DELTA_E_THRESHOLD              # ΔE₀₀ 10, the threshold used throughout\n", _s)
+        cells[_k] = code(_s, hidden=False)
+    elif _s.startswith("#@title Ground and repair"):
+        _s = re.sub(r"ConfusableBelow = 10  #@param[^\n]*\n", "", _s)
+        _s = _s.replace("#@markdown **ReplaceWhen**: which check decides that the AI's colour diverges. **ConfusableBelow**: two colours closer than this, under any viewing condition, count as too similar.",
+                        "#@markdown **ReplaceWhen**: which check decides that the AI's colour diverges. Two colours closer than ΔE₀₀ 10, under any viewing condition, count as too similar.\nConfusableBelow = DELTA_E_THRESHOLD")
+        _s = _s.replace("plot_closest_pairs(closest_pairs(pal, LANGUAGES), ConfusableBelow)", "show_closest_pairs(pal, LANGUAGES, ConfusableBelow)")
+        cells[_k] = code(_s, hidden=False)
+for _k, _c in enumerate(cells):
+    if _c["cell_type"] == "markdown":
+        _s = _src(_c)
+        _s = _s.replace("The chart underneath compares each language's AI palette with its grounded one under all seven conditions.",
+                        "The table underneath shows, for each language's AI and grounded palette and each viewing condition, the two closest colours as they look there and the ΔE₀₀ between the simulated colours.")
+        _s = _s.replace("(too far from its best example, or called something else; choose the rule in the form)",
+                        "(more than ΔE₀₀ 10 from its best example, or called something else; choose the rule in the form)")
+        _s = _s.replace("Where two colours are closer than the threshold under any viewing condition,",
+                        "Where two colours are closer than ΔE₀₀ 10 under any viewing condition,")
+        cells[_k] = md(_s)

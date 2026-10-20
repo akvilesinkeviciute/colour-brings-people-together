@@ -1,3 +1,4 @@
+import re
 from nbtools import md, code, loader_cell
 
 TITLE = "Part B — Auditing the UN SDG palette"
@@ -70,9 +71,9 @@ These simulations show how a colour might *appear*, not how people with a colour
 code("""prefetch_simulations(SDG.hex.tolist())      # ask the Colour Spinner for all 17 colours at once
 show_conditions(SDG.hex.tolist(), labels=[str(i) for i in SDG.index])"""),
 
-md("""The chart below makes "merge" measurable. For each colour in your subset it finds the **nearest other SDG colour** under each condition and reports the CIEDE2000 colour difference (ΔE00) between them. A difference of about 1 is just noticeable side by side; for colours that must be told apart at a glance in a chart or a sign, aim for 10 or more. The small number under each value names the nearest neighbour.
+md("""The chart below makes "merge" measurable. For each colour in your subset it finds the **nearest other SDG colour** under each condition and reports the CIEDE2000 colour difference (ΔE₀₀) between them. A difference of about 1 is just noticeable side by side; for colours that must be told apart at a glance in a chart or a sign, aim for 10 or more. The small number under each value names the nearest neighbour.
 
-**A note on the distances.** All colour differences in this notebook are CIEDE2000 (ΔE00). CIEDE2000 was derived from colour-difference judgements by observers with typical colour vision. Applied to simulated colours, it estimates how different those colours would look to a typical observer, which only approximates what people with a colour vision deficiency or an older eye can tell apart."""),
+**A note on the distances.** All colour differences in this notebook are CIEDE2000 (ΔE₀₀). CIEDE2000 was derived from colour-difference judgements by observers with typical colour vision. Applied to simulated colours, it estimates how different those colours would look to a typical observer, which only approximates what people with a colour vision deficiency or an older eye can tell apart."""),
 
 code("""#@title Nearest-neighbour distinctiveness { run: "auto" }
 ConfusableBelow = 10  #@param {type:"slider", min:3, max:25, step:1}
@@ -95,7 +96,7 @@ ax.set_xticks(range(len(CONDITIONS)), [condition_label(c) for c in CONDITIONS], 
 row_chips(ax, [SDG.hex[i] for i in PICK], [f"SDG {i}" for i in PICK])
 ax.tick_params(axis="x", length=0)
 for s in ax.spines.values(): s.set_visible(False)
-ax.set_title(f"Distance to the nearest other SDG colour (ΔE00); red cells fall below {ConfusableBelow}")
+ax.set_title(f"Distance to the nearest other SDG colour (ΔE₀₀); red cells fall below {ConfusableBelow}")
 plt.tight_layout(); plt.show()
 
 at_risk = {}
@@ -115,7 +116,7 @@ if at_risk:
     show('<b>Pairs at risk</b>, shown as they look under the condition where they are closest'
          f'<table class="babel">{rows}</table>')
 else:
-    show(f"Every colour in your subset stays at least ΔE00 {ConfusableBelow} from its nearest neighbour under every condition.")"""),
+    show(f"Every colour in your subset stays at least ΔE₀₀ {ConfusableBelow} from its nearest neighbour under every condition.")"""),
 
 md("""## 4 · The cognitive axis: what are these colours called?
 
@@ -196,7 +197,7 @@ md("""### Translatability
 
 Translation is where a source and a target language come in. Choose the **source language** in the form below; every other language you ticked becomes a **target language**.
 
-For each test colour, the first column shows the source language's name for it and that name's **best example** (focal colour), with its ΔE00 from the test colour. Each target column shows the target language's name for the same colour and its focal colour, with its ΔE00 from the **source's** focal colour. A small distance means the names translate: they point to the same colour. A large one means a translation would land on a different colour."""),
+For each test colour, the first column shows the source language's name for it and that name's **best example** (focal colour), with its ΔE₀₀ from the test colour. Each target column shows the target language's name for the same colour and its focal colour, with its ΔE₀₀ from the **source's** focal colour. A small distance means the names translate: they point to the same colour. A large one means a translation would land on a different colour."""),
 
 code("""rows = ""
 for i in PICK:
@@ -215,8 +216,8 @@ for i in PICK:
              f'font-weight:700;font-size:13px">SDG {i}</div></div></td>{cells}'
              f'<td style="color:{MUTED}">{"" if pd.isna(sp) else "spread " + format(sp, ".1f")}</td></tr>')
 show('<table class="babel"><tr><th></th>' + "".join(f"<th>{_h(l)}</th>" for l in LANGUAGES) +
-     f'<th></th></tr>{rows}</table><div class="note">Badges: ΔE00 from the SDG colour. '
-     'Spread: the largest ΔE00 between two languages\\' best examples.</div>')"""),
+     f'<th></th></tr>{rows}</table><div class="note">Badges: ΔE₀₀ from the SDG colour. '
+     'Spread: the largest ΔE₀₀ between two languages\\' best examples.</div>')"""),
 
 md("""The same information as a map. This is a top-down view of CAM16-UCS colour space, the perceptually uniform space the Colour Spinner works in: hue runs around the centre and colourfulness increases outwards. Each large disc is a test colour; the lines lead to where each language's name for it is centred."""),
 
@@ -240,7 +241,7 @@ plt.tight_layout(); plt.show()"""),
 
 md("""## 5 · Two axes, one picture
 
-Each disc is a test colour. Across: its **perceptual distance**, the ΔE00 to the nearest other SDG colour, for typical colour vision unless you choose another condition in the form. Up: its **naming confidence**, averaged over your languages unless you choose one. Both axes run from 0 to 1, so the two are on the same scale. The grey circle marks where the two thresholds meet. The table underneath gives the numbers, with each language's name and confidence."""),
+Each disc is a test colour. Across: its **perceptual distance**, the ΔE₀₀ to the nearest other SDG colour, for typical colour vision unless you choose another condition in the form. Up: its **naming confidence**, averaged over your languages unless you choose one. Both axes run from 0 to 1, so the two are on the same scale. The grey circle marks where the two thresholds meet. The table underneath gives the numbers, with each language's name and confidence."""),
 
 code("""#@title Scorecard { run: "auto" }
 HardToNameBelow = 0.5  #@param {type:"slider", min:0.2, max:0.9, step:0.05}
@@ -265,7 +266,7 @@ for i, r in score.iterrows():
     ax.text(r.worst_case_dE00, r.mean_confidence, str(i), ha="center", va="center",
             color=_ink_on(SDG.hex[i]), fontweight="bold", zorder=4)
 ax.set_xlim(0, xmax); ax.set_ylim(0, 1); ax.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(1))
-ax.set_xlabel("Perceptual: worst-case ΔE00 to nearest neighbour"); ax.set_ylabel("Cognitive: mean naming confidence")
+ax.set_xlabel("Perceptual: worst-case ΔE₀₀ to nearest neighbour"); ax.set_ylabel("Cognitive: mean naming confidence")
 ax.set_title("Where your colours sit on the two axes")
 plt.tight_layout(); plt.show()
 display(score.round(2))"""),
@@ -366,7 +367,7 @@ _set(9, """#@title Nearest-neighbour distinctiveness { run: "auto" }
 ConfusableBelow = 10  #@param {type:"slider", min:3, max:25, step:1}
 #@markdown Two colours closer than this CIEDE2000 colour difference count as easily confused. About 1 is just noticeable side by side; 10 is a common rule of thumb for telling colours apart at a glance.
 
-nn_de, nn_id = nearest_neighbours(PICK)      # ΔE00 to the nearest other SDG colour, per condition
+nn_de, nn_id = nearest_neighbours(PICK)      # ΔE₀₀ to the nearest other SDG colour, per condition
 plot_nearest_neighbours(nn_de, nn_id, ConfusableBelow)
 show_at_risk(nn_de, nn_id, ConfusableBelow)""")
 
@@ -522,11 +523,11 @@ About 1 in 12 men and 1 in 200 women of Northern European descent have a colour 
 
 These simulations show how a colour might *appear*, not how people with a colour vision deficiency or an older eye would *name* it: the Spinner's naming models were trained on people with typical colour vision.""")
 
-_md(8, "The chart below makes", """**Now your palette.** For each of your test colours, the chart finds the **nearest other test colour** under each condition and reports the CIEDE2000 colour difference (ΔE00) between them. About 1 is just noticeable side by side; for colours that must be told apart at a glance, as in a chart legend or on a sign, aim for 10 or more. The table underneath shows each pair that falls below your threshold, and why those two colours look alike.
+_md(8, "The chart below makes", """**Now your palette.** For each of your test colours, the chart finds the **nearest other test colour** under each condition and reports the CIEDE2000 colour difference (ΔE₀₀) between them. About 1 is just noticeable side by side; for colours that must be told apart at a glance, as in a chart legend or on a sign, aim for 10 or more. The table underneath shows each pair that falls below your threshold, and why those two colours look alike.
 
-**A note on the distances.** All colour differences in this notebook are CIEDE2000 (ΔE00). CIEDE2000 was derived from colour-difference judgements by observers with typical colour vision. Applied to simulated colours, it estimates how different those colours would look to a typical observer, which only approximates what people with a colour vision deficiency or an older eye can tell apart.""")
+**A note on the distances.** All colour differences in this notebook are CIEDE2000 (ΔE₀₀). CIEDE2000 was derived from colour-difference judgements by observers with typical colour vision. Applied to simulated colours, it estimates how different those colours would look to a typical observer, which only approximates what people with a colour vision deficiency or an older eye can tell apart.""")
 _sub(9, "nn_de, nn_id = nearest_neighbours(PICK)", "palette_strip(PICK)\nnn_de, nn_id = nearest_neighbours(PICK)")
-_sub(9, "# ΔE00 to the nearest other SDG colour, per condition", "# ΔE00 to the nearest other test colour, per condition")
+_sub(9, "# ΔE₀₀ to the nearest other SDG colour, per condition", "# ΔE₀₀ to the nearest other test colour, per condition")
 
 _m10 = "".join(cells[10]["source"])
 cells[10] = md(_m10.replace("## 4 · The cognitive axis: what are these colours called?\n\nHere you ask the Colour Spinner what speakers of each language actually call your colours.",
@@ -537,7 +538,7 @@ _sub(12, "show_names_table(naming, LANGUAGES)", "palette_strip(PICK)\nshow_names
 
 _md(15, "### Translatability", """### Translatability: do your names point where your audience's do?
 
-The first column is **your language**: your name for each test colour and that name's **best example** (focal colour), with its ΔE00 from the test colour. Each audience column shows that language's name for the same colour and its focal colour, with its ΔE00 from **yours**. A small distance means the names translate: they point to the same colour. A large one means a translation would land on a different colour.""")
+The first column is **your language**: your name for each test colour and that name's **best example** (focal colour), with its ΔE₀₀ from the test colour. Each audience column shows that language's name for the same colour and its focal colour, with its ΔE₀₀ from **yours**. A small distance means the names translate: they point to the same colour. A large one means a translation would land on a different colour.""")
 _code(16, "show_translatability(", "show_translatability(naming, PICK, LANGUAGES, ConfusableBelow, source=YourLanguage)")
 
 cells[18:19] = [cells[18],
@@ -549,7 +550,7 @@ The Colour Spinner's **Translator** takes your name for each test colour and fin
 _i = next(k for k, c in enumerate(cells) if c["cell_type"] == "markdown" and "".join(c["source"]).startswith("## 5 ·"))
 _md(_i, "## 5 ·", """## 5 · Two axes, one picture
 
-Each disc is a test colour. Across: its **perceptual distance**, the ΔE00 to the nearest other test colour, for typical colour vision unless you choose another condition. Up: its **naming confidence**, for your language, one audience language, or averaged over your audience. Both axes run from 0 to 1. The grey circle marks where your two thresholds meet. The table underneath gives the numbers, with each language's name and confidence.""")
+Each disc is a test colour. Across: its **perceptual distance**, the ΔE₀₀ to the nearest other test colour, for typical colour vision unless you choose another condition. Up: its **naming confidence**, for your language, one audience language, or averaged over your audience. Both axes run from 0 to 1. The grey circle marks where your two thresholds meet. The table underneath gives the numbers, with each language's name and confidence.""")
 _k = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "card = scorecard(" in "".join(c["source"]))
 _src = "".join(cells[_k]["source"])
 _src = _src.replace('Language = "Average of my languages"  #@param ["Average of my languages", "American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]',
@@ -626,3 +627,50 @@ for _k, _c in enumerate(cells):
 # ── nameability: one panel per test colour; your language marked ──
 _k = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "".join(c["source"]).strip() == "plot_nameability(naming, PICK, LANGUAGES)")
 cells[_k] = code("plot_nameability(naming, PICK, LANGUAGES, you=YourLanguage)")
+
+
+# ── maps in CIELAB, the space ΔE₀₀ is computed in ──
+_k = next(k for k, c in enumerate(cells) if c["cell_type"] == "markdown" and "".join(c["source"]).startswith("The same information as a map."))
+cells[_k] = md("""The same information as a map: the CIELAB a*–b* plane seen from above, the space the ΔE₀₀ distances are calculated in (lightness isn't shown). Hue runs around the centre and colourfulness increases outwards. Each large disc is a test colour; the lines lead to where each language's name for it is centred.""")
+
+
+# ── collaborator feedback, October 2026 ──
+def _src(c): return "".join(c["source"])
+# smaller caption under the splash image
+_m0 = _src(cells[0])
+_a = _m0.index("*The 17 Sustainable Development Goals and their colours.")
+_b = _m0.index("Member States.*", _a) + len("Member States.*")
+cells[0] = md(_m0[:_a] + '<span style="font-size:11px;color:#5E5E5E;line-height:1.35">The 17 Sustainable Development Goals and their colours. '
+    'Source: United Nations, <a href="https://www.un.org/sustainabledevelopment/news/communications-material/">Sustainable Development Goals communications materials</a>. '
+    'Visit the UN SDG website: <a href="https://www.un.org/sustainabledevelopment">un.org/sustainabledevelopment</a>. '
+    'The content of this publication has not been approved by the United Nations and does not reflect the views of the United Nations or its officials or Member States.</span>' + _m0[_b:])
+# one threshold, no sliders
+for _k, _c in enumerate(cells):
+    if _c["cell_type"] != "code": continue
+    _s = _src(_c)
+    if _s.startswith("#@title Nearest-neighbour distinctiveness"):
+        _s = _s.split("\n", 1)[1]
+        _s = re.sub(r"ConfusableBelow = 10  #@param[^\n]*\n#@markdown[^\n]*\n", "ConfusableBelow = DELTA_E_THRESHOLD           # ΔE₀₀ 10, the threshold used throughout\n", _s)
+        cells[_k] = code(_s, hidden=False)
+# nameability: the names table above is enough; translatability for all six languages removed
+cells[:] = [c for c in cells if not (
+    (c["cell_type"] == "code" and _src(c).strip().startswith("plot_nameability(")) or
+    (c["cell_type"] == "markdown" and _src(c).startswith("### Nameability")) or
+    (c["cell_type"] == "code" and _src(c).strip().startswith("show_translations(")) or
+    (c["cell_type"] == "markdown" and _src(c).startswith("### Your names in all six languages")))]
+# scorecard: fixed axes, no sliders
+_k = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "card = scorecard(" in _src(c))
+cells[_k] = code("""#@title Scorecard { run: "auto" }
+Language = "Average of my audience"  #@param ["Average of my audience", "My language", "Average of all my languages", "American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]
+Vision = "Typical"  #@param ["Typical", "Protanopia", "Deuteranopia", "Tritanopia", "Age 40", "Age 60", "Age 80", "Worst case of all conditions"]
+#@markdown **Language**: whose naming confidence to plot. **Vision**: which colours the ΔE₀₀ is between (*Typical* = typical colours; otherwise the simulated colours).
+
+chosen = {"My language": YourLanguage, "Average of all my languages": ALL_LANGUAGES}.get(Language, Language)
+palette_strip(PICK)
+card = scorecard(PICK, naming, chosen, Vision, audience=AUDIENCE)
+plot_two_axes(card)                 # ΔE₀₀ 10 and 50% confidence, on fixed axes
+show_scorecard(card)""", hidden=False)
+_i = next(k for k, c in enumerate(cells) if c["cell_type"] == "markdown" and _src(c).startswith("## 6 · Two axes"))
+cells[_i] = md("""## 6 · Two axes, one picture: the colour identity scorecard
+
+Each disc is a test colour. Across: its **naming confidence**, for your audience on average unless you choose otherwise. Up: its **nearest-colour ΔE₀₀**, the distance to the nearest other test colour; with *Vision* set to a condition, it is the ΔE₀₀ between the simulated colours (for example, between deuteranopia-simulated colours). The axes are fixed, so different palettes and conditions can be compared directly. The dashed lines are the masterclass thresholds: ΔE₀₀ 10 and 50% confidence. The table underneath gives the numbers, with each language's name and confidence.""")

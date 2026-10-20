@@ -72,15 +72,15 @@ def rgb_to_hex(rgb):
     return colour.notation.RGB_to_HEX(rgb / 255).upper()
 
 def _srgb(c):
-    """sRGB in 0–1 from '#hex' or (r, g, b) in 0–255."""
+    """The colour as 0–1 values, from '#hex' or (r, g, b) in 0–255."""
     return (hex_to_rgb(c) if isinstance(c, str) else np.asarray(c, float)) / 255
 
 def rgb_to_xyz(c):
-    """CIE XYZ (Y in 0–1) of an sRGB colour."""
+    """Intermediate step for CIELAB (the library's standard conversion from hex colours)."""
     return colour.sRGB_to_XYZ(_srgb(c))
 
 def rgb_to_lab(c):
-    """CIELAB (D65) of an sRGB colour."""
+    """CIELAB (D65) of a hex colour: the space ΔE₀₀ is computed in."""
     return colour.XYZ_to_Lab(rgb_to_xyz(c))
 
 def de00(c1, c2):
@@ -93,18 +93,12 @@ def spread(hexes):
     hexes = [h for h in hexes if isinstance(h, str)]
     return max((de00(a, b) for a, b in combinations(hexes, 2)), default=np.nan)
 
-def rgb_to_cam16ucs(c):
-    """CAM16-UCS J′a′b′ (Li et al. 2017) under sRGB viewing conditions, the space the
-    Colour Spinner works in. J′ runs 0–100."""
-    return np.asarray(colour.XYZ_to_CAM16UCS(rgb_to_xyz(c)), float)
-
 def _check_colour_library():
     """Guard against unit or API changes in colour-science with known reference values."""
     checks = [
-        ("sRGB red in CIELAB", rgb_to_lab("#FF0000"), [53.24, 80.09, 67.20], 0.05),
+        ("#FF0000 in CIELAB", rgb_to_lab("#FF0000"), [53.24, 80.09, 67.20], 0.05),
         ("CIEDE2000, Sharma et al. (2005) pair 1",
          colour.delta_E([50, 2.6772, -79.7751], [50, 0, -82.7485], method="CIE 2000"), 2.0425, 1e-3),
-        ("CAM16-UCS lightness of white", rgb_to_cam16ucs("#FFFFFF")[0], 100.0, 0.5),
     ]
     bad = [n for n, got, want, tol in checks if not np.allclose(got, want, atol=tol)]
     if bad:
@@ -686,19 +680,28 @@ def show_babel(table, languages, labels=None):
     show(f'<table class="babel">{head}{body}</table>')
 
 _GOOD, _MID, _BAD = ("#DDEFE3", "#14532D"), ("#FBF0D0", "#6B4E00"), ("#F9DADA", "#7F1D1D")
-def de_badge(d, threshold, small_is_good=True):
-    """ΔE00 badge. small_is_good=True for 'how far off' (agreement);
+DELTA_E_THRESHOLD = 10      # ΔE₀₀: the one threshold used throughout the masterclass
+HARD_TO_NAME = 0.5          # naming confidence below this counts as hard to name
+
+def sim_phrase(condition):
+    """'Deuteranopia' -> 'deuteranopia-simulated colours'; 'Age 80' -> 'colours simulated for age 80'."""
+    if condition == "Typical": return "typical colours"
+    if condition.startswith("Age"): return f"colours simulated for {condition.lower()}"
+    return f"{condition.lower()}-simulated colours"
+
+def de_badge(d, threshold, small_is_good=True, prefix=""):
+    """ΔE₀₀ badge. small_is_good=True for 'how far off' (agreement);
     False for 'how far apart' (distinctiveness), where small is the risk."""
     if pd.isna(d): return '<span class="badge" style="background:#E4E4E0">n/a</span>'
     if small_is_good:
         bg, fg = _GOOD if d <= threshold / 2 else _MID if d <= threshold else _BAD
     else:
         bg, fg = _BAD if d < threshold / 2 else _MID if d < threshold else _GOOD
-    return f'<span class="badge" style="background:{bg};color:{fg}">{d:.1f}</span>'
+    return f'<span class="badge" style="background:{bg};color:{fg}">{prefix}{d:.1f}</span>'
 
 def show_pairs(df, left="ai_hex", right="spinner_hex", lab_left="AI", lab_right="Speakers",
                threshold=10, extra_cols=()):
-    """For each name: the AI's colour, the speakers' best example, and the ΔE00 between them as a bar."""
+    """For each name: the AI's colour, the speakers' best example, and the ΔE₀₀ between them as a bar."""
     top = max(2 * threshold, float(np.nanmax(df["de00"])) if df["de00"].notna().any() else 1)
     rows, last = [], None
     for _, r in df.iterrows():
@@ -713,8 +716,8 @@ def show_pairs(df, left="ai_hex", right="spinner_hex", lab_left="AI", lab_right=
             col = "#B4342D" if d > threshold else ("#C9A227" if d > threshold / 2 else "#3E8E5E")
             dist = f'<b>{d:.1f}</b>{bar(d / top, col, 160)}'
         rows.append([lang, f"<b>{_h(r['name'])}</b>", a, b, dist])
-    table(["Language", "Name", lab_left, lab_right, "ΔE00 between them"], rows,
-          f"ΔE00 ≈ 1 is just noticeable side by side; above {threshold:g} (red) the two read as different "
+    table(["Language", "Name", lab_left, lab_right, "ΔE₀₀ between them"], rows,
+          f"ΔE₀₀ ≈ 1 is just noticeable side by side; above {threshold:g} (red) the two read as different "
           "colours and the AI's colour will be replaced.")
 
 # ── matplotlib house style ───────────────────────────────────────────────
