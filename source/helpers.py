@@ -4,7 +4,7 @@
 #  6. Activity helpers: the charts and tables the notebooks show
 # ════════════════════════════════════════════════════════════════════════
 esc, ink_on, read_sheet = _h, _ink_on, _read_sheet      # public names for notebook cells
-MARKERS = dict(zip(SPINNER_LANGUAGES, ["o", "s", "D", "^", "v", "P"]))
+MARKERS = dict(zip(SPINNER_LANGUAGES, ["p", "s", "D", "*", "^", "h"]))   # the test colour itself is a circle
 
 def _language_legend(ax, languages, loc="best", size=8):
     ax.legend(handles=[mpl.lines.Line2D([], [], marker=MARKERS.get(l, "o"), ls="", color="white",
@@ -14,7 +14,7 @@ def _language_legend(ax, languages, loc="best", size=8):
 def _lab_axes(ax):
     """The CIELAB a*–b* plane, seen from above (lightness not shown)."""
     ax.axhline(0, color="#E4E4E0", lw=1, zorder=0); ax.axvline(0, color="#E4E4E0", lw=1, zorder=0)
-    ax.set_xlabel("a*  (green ← → red)", color=MUTED); ax.set_ylabel("b*  (blue ← → yellow)", color=MUTED)
+    ax.set_xlabel("a*", color=MUTED); ax.set_ylabel("b*", color=MUTED, rotation=0, labelpad=10)
 
 def _titles(ax, title, subtitle=""):
     """Bold title with a muted subtitle underneath, left-aligned and wrapped to the plot's width."""
@@ -372,7 +372,131 @@ def show_translations(spinner, naming, pick, you):
           "From the Spinner's Translator: the name in each language whose naming distribution best matches yours. "
           "Translation confidence is how closely the two names are used for the same colours.")
 
+def _lab_panels(n, title, subtitle, points, pad=8, height=3.4):
+    """One CIELAB a*–b* panel per language, two across, all on the same scale and sized to the data."""
+    import math, textwrap
+    pts = np.asarray(points, float)
+    lo, hi = pts.min(0) - pad, pts.max(0) + pad
+    ratio = (hi[0] - lo[0]) / (hi[1] - lo[1])
+    ncols = 2 if n > 1 else 1
+    nrows = math.ceil(n / ncols)
+    w = max(3.2, height * ratio) + 0.9
+    fig, axes = plt.subplots(nrows, ncols, figsize=(w * ncols, height * nrows + 1.2), squeeze=False)
+    for ax in axes.flat[n:]:
+        ax.axis("off")
+    fig.suptitle(title, x=0.01, ha="left", fontsize=13, fontweight="bold")
+    fig.text(0.01, 1 - 0.5 / fig.get_figheight(), textwrap.fill(subtitle, int(w * ncols * 13)),
+             fontsize=9.5, color=MUTED, ha="left", va="top", linespacing=1.3)
+    for ax in axes.flat[:n]:
+        _lab_axes(ax)
+        ax.set_xlim(lo[0], hi[0]); ax.set_ylim(lo[1], hi[1]); ax.set_aspect("equal", adjustable="box")
+        ax.tick_params(labelsize=8.5, colors=MUTED)
+    return fig, list(axes.flat[:n])
+
+def _point_label(ax, x, y, text, dx=5, dy=5):
+    ax.annotate(text, (x, y), xytext=(dx, dy), textcoords="offset points", fontsize=8.5, color=INK,
+                bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.75), zorder=2.5)
+
+def _clean_lab_axes(ax, points=None, pad=8, ratio=1.55):
+    """The CIELAB a*–b* plane in the style of our colour-naming figures: no grid, light frame, fitted to the data.
+    a* and b* keep the same scale; the shorter range is widened around the data so the plot fills a wide frame."""
+    if points is not None and len(points):
+        pts = np.asarray(points, float); lo, hi = pts.min(0) - pad, pts.max(0) + pad
+        w, h = hi - lo
+        if w < h * ratio:
+            cx = (lo[0] + hi[0]) / 2; lo[0], hi[0] = cx - h * ratio / 2, cx + h * ratio / 2
+        else:
+            cy = (lo[1] + hi[1]) / 2; lo[1], hi[1] = cy - w / ratio / 2, cy + w / ratio / 2
+        ax.set_xlim(lo[0], hi[0]); ax.set_ylim(lo[1], hi[1])
+    for sp in ("top", "right"): ax.spines[sp].set_visible(False)
+    for sp in ("left", "bottom"): ax.spines[sp].set_color("#8A8A85")
+    ax.tick_params(colors="#5E5E5E", labelsize=9)
+    ax.set_xlabel("a*", color=INK); ax.set_ylabel("b*", color=INK, rotation=0, labelpad=10)
+    ax.set_aspect("equal", adjustable="box")
+
+def _marker_size(m, base):
+    return 0.8 * base * {"*": 1.9, "p": 1.15, "h": 1.1}.get(m, 1.0)
+
+def _shape_legend(ax, entries):
+    ax.legend(handles=[mpl.lines.Line2D([], [], marker=m, ls="", markerfacecolor=fc, markeredgecolor=INK,
+                                        markeredgewidth=0.8, markersize=8 * (1.3 if m == "*" else 1), label=l)
+                       for l, m, fc in entries],
+              frameon=False, loc="upper left", bbox_to_anchor=(1.01, 1), fontsize=9.5, handletextpad=0.4)
+
+MAP_HALF_WINDOW = 30        # ΔE-sized half-width of each map panel; points further out are drawn at the edge
+
+def _to_window(ax, p, centre):
+    """A point inside the panel, or the place where its line leaves the panel (and whether it was moved)."""
+    (x0, x1), (y0, y1) = ax.get_xlim(), ax.get_ylim()
+    p, c = np.asarray(p, float), np.asarray(centre, float)
+    if x0 <= p[0] <= x1 and y0 <= p[1] <= y1:
+        return p, False
+    d = p - c
+    t = min([((x1 if d[0] > 0 else x0) - c[0]) / d[0] if d[0] else np.inf,
+             ((y1 if d[1] > 0 else y0) - c[1]) / d[1] if d[1] else np.inf])
+    return c + d * t * 0.93, True
+
+def _edge_arrow(ax, start, end):
+    ax.annotate("", xy=end, xytext=start, arrowprops=dict(arrowstyle="-|>", color="#1C1C1C", lw=0.7,
+                shrinkA=0, shrinkB=0, mutation_scale=9), zorder=1)
+
+def _panel_grid(groups, title, subtitle, legend_entries):
+    """A 2 × 2 (or smaller) grid of CIELAB a*–b* panels, one per group, every window the same size so distances
+    compare across panels. groups: list of (panel title, centre (a*, b*), [all (a*, b*) points in the panel])."""
+    import math, textwrap
+    half = min(MAP_HALF_WINDOW, max(np.abs(np.asarray(pts, float) - np.asarray(c, float)).max() for _, c, pts in groups) + 7)
+    n = len(groups); ncols = 2 if n > 1 else 1; nrows = math.ceil(n / ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5.2 * ncols, 4.6 * nrows + 1.5 + 0.3 * (len(legend_entries) > 5)), squeeze=False)
+    for ax in axes.flat[n:]: ax.axis("off")
+    for ax, (t, c, _) in zip(axes.flat, groups):
+        for sp in ("top", "right"): ax.spines[sp].set_visible(False)
+        for sp in ("left", "bottom"): ax.spines[sp].set_color("#8A8A85")
+        ax.tick_params(colors="#5E5E5E", labelsize=8.5)
+        ax.set_xlim(c[0] - half, c[0] + half); ax.set_ylim(c[1] - half, c[1] + half); ax.set_aspect("equal")
+        ax.set_xlabel("a*", color=INK); ax.set_ylabel("b*", color=INK, rotation=0, labelpad=10)
+        ax.set_title(t, loc="left", fontsize=11, fontweight="bold", pad=6)
+    fig.suptitle(title, x=0.01, ha="left", fontsize=13, fontweight="bold")
+    fig.text(0.01, 1 - 0.5 / fig.get_figheight(), textwrap.fill(subtitle, int(5.2 * ncols * 14)),
+             fontsize=9.5, color=MUTED, ha="left", va="top", linespacing=1.3)
+    fig.legend(handles=[mpl.lines.Line2D([], [], marker=m, ls="", markerfacecolor=fc, markeredgecolor=INK,
+                                         markeredgewidth=0.8, markersize=8 * (1.3 if m == "*" else 1), label=l)
+                        for l, m, fc in legend_entries],
+               loc="lower center", ncol=len(legend_entries) if len(legend_entries) <= 5 else -(-len(legend_entries) // 2), frameon=False, fontsize=9.5, bbox_to_anchor=(0.5, 0))
+    plt.tight_layout(rect=(0, (0.5 + 0.3 * (len(legend_entries) > 5)) / fig.get_figheight(), 1, 1 - 0.85 / fig.get_figheight()), h_pad=2, w_pad=2)
+    return fig, list(axes.flat[:n])
+
 def plot_name_map(naming, pick, languages):
+    """One panel per test colour: the test colour (numbered circle) joined by thin lines to the best example of each
+    language's name for it, one shape per language, on the CIELAB a*–b* plane."""
+    pick = [i for i in pick if not naming[(naming.sdg == i) & naming.best_example.notna()].empty]
+    if not pick: return
+    groups = []
+    for i in pick:
+        o = rgb_to_lab(SDG.hex[i])[1:]
+        pts = [o] + [rgb_to_lab(b)[1:] for b in naming[(naming.sdg == i) & naming.best_example.notna()].best_example]
+        groups.append((f"Test colour {i}", o, pts))
+    fig, axes = _panel_grid(groups, "Where each language's name pulls the test colour",
+                            "CIELAB a*–b* plane, seen from above (lightness not shown). Numbered circle: the test colour. "
+                            "Joined to it: the best example (focal colour) of each language's name for it. Every panel "
+                            "has the same scale, so the line lengths compare; an arrow at the edge means that best "
+                            "example lies further out.",
+                            [("Test colour", "o", "white")] + [(l, MARKERS.get(l, "o"), "white") for l in languages])
+    for ax, i in zip(axes, pick):
+        o = rgb_to_lab(SDG.hex[i])
+        for _, r in naming[(naming.sdg == i) & naming.best_example.notna()].iterrows():
+            b = rgb_to_lab(r.best_example); m = MARKERS.get(r.language, "o")
+            pb, moved = _to_window(ax, b[1:], o[1:])
+            if moved:                                   # far away: an arrow to the panel's edge
+                _edge_arrow(ax, o[1:], pb)
+            else:
+                ax.plot([o[1], pb[0]], [o[2], pb[1]], color="#1C1C1C", lw=0.7, zorder=1)
+            ax.scatter(*pb, s=_marker_size(m, 150), marker=m, color=r.best_example, edgecolor="none", zorder=3,
+                       alpha=0.85 if moved else 1)
+        ax.scatter(o[1], o[2], s=440, color=SDG.hex[i], edgecolor="white", lw=2, zorder=4)
+        ax.text(o[1], o[2], str(i), ha="center", va="center", fontsize=10, fontweight="bold", color=ink_on(SDG.hex[i]), zorder=5)
+    plt.show()
+
+def _plot_name_map_single(naming, pick, languages):
     fig, ax = plt.subplots(figsize=(8, 6.2)); _lab_axes(ax)
     for i in pick:
         o = rgb_to_lab(SDG.hex[i])
@@ -451,8 +575,8 @@ def plot_two_axes(card, confusable_below=DELTA_E_THRESHOLD, hard_below=HARD_TO_N
              ((hard_below, 0), 1 - hard_below, confusable_below, "#F4F4F2", "Nameable, confusable", "right", "bottom")]
     for (x, y), w, hgt, col, label, ha, va in zones:
         ax.add_patch(mpl.patches.Rectangle((x, y), w, hgt, fc=col, ec="none", zorder=0))
-        ax.text(x + (0.02 if ha == "left" else w - 0.02), y + (hgt - top * 0.02 if va == "top" else top * 0.02), label,
-                ha=ha, va=va, fontsize=10.5, color="#5E5E5E", zorder=1)
+        ax.text(x + (0.015 if ha == "left" else w - 0.015), y + (hgt - top * 0.012 if va == "top" else top * 0.012), label,
+                ha=ha, va=va, fontsize=9, color="#7A7A75", zorder=1)
     ax.axvline(hard_below, color="#9A9A95", ls=(0, (4, 3)), lw=1.2, zorder=1)
     ax.axhline(confusable_below, color="#9A9A95", ls=(0, (4, 3)), lw=1.2, zorder=1)
     pts = [(i, r.confidence_0to1, min(r.dE00, top * 0.97), r.dE00) for i, r in card.iterrows()
@@ -479,11 +603,12 @@ def plot_two_axes(card, confusable_below=DELTA_E_THRESHOLD, hard_below=HARD_TO_N
     ax.spines["left"].set_color(INK); ax.spines["bottom"].set_color(INK)
     lab = card.attrs["language"]
     who = ("your audience on average" if lab == AUDIENCE_AVG else "all your languages on average" if lab == ALL_LANGUAGES else lab)
-    ax.set_xlabel(f"Naming confidence ({who})")
-    ax.set_ylabel(f"Nearest-colour ΔE₀₀ (between {sim_phrase(card.attrs['condition']) if card.attrs['condition'] != WORST_CASE else 'simulated colours, worst case'})")
+    ax.set_xlabel("Naming confidence")
+    ax.set_ylabel("Nearest-colour ΔE₀₀")
+    between = sim_phrase(card.attrs["condition"]) if card.attrs["condition"] != WORST_CASE else "simulated colours, worst case"
     _titles(ax, "Colour identity scorecard",
-            f"Each disc is a test colour. Dashed lines: ΔE₀₀ {confusable_below:g} and {hard_below:.0%} confidence. "
-            "Fixed axes, so every palette is drawn on the same scale."
+            f"Each disc is a test colour. Confidence: {who}. ΔE₀₀: between {between}. Dashed lines: ΔE₀₀ "
+            f"{confusable_below:g} and {hard_below:.0%} confidence. Fixed axes, so every palette is drawn on the same scale."
             + (" Discs at the same position are set side by side." if nudged else ""))
     plt.tight_layout(); plt.show()
 
@@ -915,24 +1040,37 @@ def show_round_trip(pal):
 
 # ── Part C: comparing ─────────────────────────────────────────────────────
 def plot_ai_vs_speakers(pal, languages, threshold):
+    """One panel per test colour (or per language, for names typed in by hand): for each name, the AI's colour
+    (outlined shape) joined by a thin line to the speakers' best example (filled shape), one shape per language."""
     ok = pal.dropna(subset=["ai_hex", "spinner_hex"])
     if ok.empty: return
-    fig, ax = plt.subplots(figsize=(7.6, 6.6)); _lab_axes(ax)
-    for _, r in ok.iterrows():
-        a, s = rgb_to_lab(r.ai_hex), rgb_to_lab(r.spinner_hex)
-        far = r.de00 > threshold
-        ax.annotate("", xy=(s[1], s[2]), xytext=(a[1], a[2]),
-                    arrowprops=dict(arrowstyle="-|>", color="#B4342D" if far else "#9A9A95", lw=1.2 if far else 0.9,
-                                    shrinkA=7, shrinkB=9), zorder=1)
-        ax.scatter(a[1], a[2], s=60, marker=MARKERS.get(r.language, "o"), color=r.ai_hex, edgecolor=INK, lw=0.6, zorder=2)
-        ax.scatter(s[1], s[2], s=180, marker=MARKERS.get(r.language, "o"), color=r.spinner_hex,
-                   edgecolor="white", lw=2, zorder=3)
-    _language_legend(ax, languages)
-    ax.set_aspect("equal", adjustable="datalim")
-    _titles(ax, "From the AI's colour to the speakers' best example",
-            f"CIELAB a*–b* plane, seen from above. Small marker: the AI's colour. Large marker: the speakers' "
-            f"best example. Red arrows: more than ΔE₀₀ {threshold:g} apart.")
-    plt.tight_layout(); plt.show()
+    by_sdg = "sdg" in ok and ok.sdg.notna().all()
+    keys = list(dict.fromkeys(ok.sdg.astype(int))) if by_sdg else [l for l in languages if l in set(ok.language)]
+    groups = []
+    for k in keys:
+        g = ok[ok.sdg == k] if by_sdg else ok[ok.language == k]
+        pts = [rgb_to_lab(h)[1:] for h in pd.concat([g.ai_hex, g.spinner_hex])]
+        centre = rgb_to_lab(SDG.hex[k])[1:] if by_sdg else np.mean(pts, axis=0)
+        groups.append((f"Names for test colour {k}" if by_sdg else k, centre, pts + [centre]))
+    langs = [l for l in languages if l in set(ok.language)]
+    fig, axes = _panel_grid(groups, "From the AI's colour to the speakers' best example",
+                            "CIELAB a*–b* plane, seen from above (lightness not shown). Outlined shape: the AI's colour. "
+                            "Filled shape: the speakers' best example. The longer the line, the further the AI is from what "
+                            "speakers mean. Every panel has the same scale; an arrow at the edge means the AI's colour lies further out.",
+                            [("AI's colour (outlined)", "o", "white"), ("Speakers' best example (filled)", "o", "#5E5E5E")]
+                            + [(l, MARKERS.get(l, "o"), "white") for l in langs])
+    for ax, (k, (_, centre, _)) in zip(axes, zip(keys, groups)):
+        g = ok[ok.sdg == k] if by_sdg else ok[ok.language == k]
+        for _, r in g.iterrows():
+            a, s_ = rgb_to_lab(r.ai_hex), rgb_to_lab(r.spinner_hex); m = MARKERS.get(r.language, "o")
+            pa, a_out = _to_window(ax, a[1:], centre); ps, s_out = _to_window(ax, s_[1:], centre)
+            if a_out and not s_out:                    # the AI's colour lies outside the panel
+                _edge_arrow(ax, ps, pa)
+            else:
+                ax.plot([pa[0], ps[0]], [pa[1], ps[1]], color="#1C1C1C", lw=0.7, zorder=1)
+            ax.scatter(*pa, s=_marker_size(m, 120), marker=m, facecolor="white", edgecolor=r.ai_hex, lw=2, zorder=3)
+            ax.scatter(*ps, s=_marker_size(m, 160), marker=m, color=r.spinner_hex, edgecolor="none", zorder=4)
+    plt.show()
 
 def error_summary(pal, languages, threshold):
     """Per language: how far the AI's colours were from speakers' best examples."""
@@ -1060,27 +1198,28 @@ def closest_pairs(pal, languages, conditions=CONDITIONS):
 
 @needs_simulations()
 def show_closest_pairs(pal, languages, threshold=DELTA_E_THRESHOLD, conditions=CONDITIONS):
-    """For each language's AI and grounded palette, and each condition: the two colours that are closest,
-    as they look there, and the ΔE₀₀ between them."""
+    """For each language's AI and grounded palette: its two closest colours, under the viewing condition where they
+    are closest, as they look there, with the ΔE₀₀ between the simulated colours."""
     from itertools import combinations
     prefetch_simulations([h for h in pd.concat([pal.ai_hex, pal.grounded_hex]) if isinstance(h, str)])
     rows = []
     for lang in languages:
         p = pal[pal.language == lang]
-        for label, col in [("AI", "ai_hex"), ("Grounded", "grounded_hex")]:
+        cells = []
+        for label, col in [("AI palette", "ai_hex"), ("Grounded palette", "grounded_hex")]:
             hexes = [h for h in p[col] if isinstance(h, str)]
-            if len(hexes) < 2: continue
-            cells = []
-            for c in conditions:
-                d, a, b = min((de00(simulate(x, c), simulate(y, c)), x, y) for x, y in combinations(hexes, 2))
-                sw = (f'<div style="display:flex;gap:4px;margin-bottom:4px">{swatch(simulate(a, c), 30, 22)}'
-                      f'{swatch(simulate(b, c), 30, 22)}</div>')
-                cells.append(sw + pill(f"{d:.1f}", "bad" if d < threshold else "good"))
-            rows.append([f"<b>{_h(lang)}</b><br>{small(label)}"] + cells)
+            if len(hexes) < 2:
+                cells.append(small("fewer than two colours")); continue
+            d, c, a, b = min((de00(simulate(x, cc), simulate(y, cc)), cc, x, y)
+                             for cc in conditions for x, y in combinations(hexes, 2))
+            sw = (f'<div style="display:flex;gap:4px;margin-bottom:4px">{swatch(simulate(a, c), 34, 24)}'
+                  f'{swatch(simulate(b, c), 34, 24)}</div>')
+            cells.append(f'{sw}{pill(f"{d:.1f}", "bad" if d < threshold else "good")} {small(_h(c))}')
+        rows.append([f"<b>{_h(lang)}</b>"] + cells)
     show("<b>Can every viewer still tell each palette's colours apart?</b>")
-    table(["Palette"] + [_h(c) for c in conditions], rows, valign="top",
-          note=f"Each cell: the two closest colours of that palette as they look in that column, and the ΔE₀₀ between the "
-               f"simulated colours (for example, between deuteranopia-simulated colours). Red: below {threshold:g}.")
+    table(["Language", "AI palette", "Grounded palette"], rows, valign="top",
+          note=f"For each palette: its two closest colours under the viewing condition where they are closest, as they "
+               f"look there, and the ΔE₀₀ between the simulated colours. Red: below {threshold:g}.")
 
 def plot_closest_pairs(check, threshold):
     if check is None: return
@@ -1163,7 +1302,351 @@ def _explorer_data(n):
     scat = [[(clamp(cx + randn() * 6), clamp(cy + randn() * 6)) for _ in range(8)] for cx, cy in centres]
     return bar[:n], line[:n], scat[:n]
 
-APPLICATIONS = ["Colour swatches", "Bar chart", "Donut chart", "Line chart", "Scatter plot", "Map (regions)"]
+APPLICATIONS = ["Colour swatches", "Bar chart", "Donut chart", "Line chart", "Scatter plot", "Map (US states)"]
+
+# The US states map from the palette explorer (Albers USA projection, with its example values per state),
+# compressed so the toolkit needs no extra files or downloads.
+_US_STATES = None
+_US_STATES_B64 = (
+    "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"
+    "S2ROkw=="
+)
+
+def _us_states():
+    global _US_STATES
+    if _US_STATES is None:
+        import zlib, base64
+        _US_STATES = json.loads(zlib.decompress(base64.b64decode(_US_STATES_B64)))
+    return _US_STATES
 
 def _draw_application(ax, kind, cols, names, data):
     bar, line, scat = data
@@ -1178,7 +1661,8 @@ def _draw_application(ax, kind, cols, names, data):
                          fc="white", ec=(0, 0, 0, 0.12), lw=0.6, mutation_aspect=1.2))
             ax.add_patch(mpl.patches.FancyBboxPatch((k + 0.06, 0.05), 0.88, 0.82, boxstyle="round,pad=0,rounding_size=0.06",
                          fc=c, ec="none", mutation_aspect=1.2))
-            ax.text(k + 0.5, 1.04, nm, ha="center", va="center", fontsize=8.5, color=MUTED)
+            ax.text(k + 0.5, 1.04, nm, ha="center", va="center", fontsize=14 if n <= 4 else 12 if n <= 6 else 10,
+                    color=INK, fontweight="bold")
     elif kind == "Bar chart":
         for k, (c, v) in enumerate(zip(cols, bar)):
             ax.add_patch(mpl.patches.FancyBboxPatch((k - 0.36, 0), 0.72, v, boxstyle="round,pad=0,rounding_size=0.08",
@@ -1210,18 +1694,15 @@ def _draw_application(ax, kind, cols, names, data):
             xs_, ys_ = zip(*pts)
             ax.scatter(xs_, ys_, s=46, color=c, alpha=0.73, edgecolor=c, lw=1)
         ax.set_xlim(0, 100); ax.set_ylim(0, 100); ax.grid(True, color=grid, lw=0.8, alpha=1); ax.set_axisbelow(True)
-    elif kind == "Map (regions)":
-        layout = ["01234", "5x67x", "x89xx"]                    # a schematic map of regions, as in the explorer
-        regions = ["North", "North East", "Coast", "Highlands", "East", "West", "Centre", "Lakes", "South West", "South"]
-        ax.set_xlim(0, 5); ax.set_ylim(3, 0); ax.axis("off"); ax.set_aspect("equal")
-        for r_, row in enumerate(layout):
-            for c_, ch in enumerate(row):
-                if ch == "x": continue
-                k = int(ch); col = cols[k % n]
-                ax.add_patch(mpl.patches.FancyBboxPatch((c_ + 0.05, r_ + 0.05), 0.9, 0.9, boxstyle="round,pad=0,rounding_size=0.1",
-                             fc=col, ec=(0, 0, 0, 0.12), lw=0.6))
-                ax.text(c_ + 0.5, r_ + 0.5, regions[k], ha="center", va="center", fontsize=7.5, fontweight="bold",
-                        color=_ink_on(col), wrap=True)
+    elif kind == "Map (US states)":
+        states = _us_states()
+        rates = [st["rate"] for st in states if st["rate"] is not None]
+        cuts = np.quantile(rates, np.linspace(0, 1, n + 1)[1:-1])      # one class of states per palette colour
+        for st in states:
+            k = int(np.searchsorted(cuts, st["rate"])) if st["rate"] is not None else 0
+            for ring_ in st["rings"]:
+                ax.add_patch(mpl.patches.Polygon(ring_, closed=True, fc=cols[min(k, n - 1)], ec="white", lw=0.4))
+        ax.autoscale(); ax.set_aspect("equal"); ax.invert_yaxis(); ax.axis("off")
 
 def preview_applications(pal, language, vision="Typical", path=None, kind="Bar chart"):
     """The grounded palette for one language applied to a chart, map or swatches, in the style of the
@@ -1241,9 +1722,9 @@ def preview_applications(pal, language, vision="Typical", path=None, kind="Bar c
         ax.set_title(condition_label(cond, " ") if cond != "Typical" else "Typical colour vision", fontsize=11, loc="left", pad=10)
         if kind != "Colour swatches":          # a legend of small squares, as in the explorer
             handles = [mpl.patches.Patch(color=c, label=nm) for c, nm in zip(cols, names)]
-            ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.1 if kind not in ("Donut chart", "Map (regions)") else -0.02),
+            ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.1 if kind not in ("Donut chart", "Map (US states)") else -0.02),
                       ncol=min(len(names), 4), frameon=False, fontsize=9, handlelength=0.8, handleheight=0.8, labelcolor=MUTED)
-    what = {"Colour swatches": "as swatches", "Map (regions)": "applied to a map"}.get(kind, f"applied to a {kind.lower()}")
+    what = {"Colour swatches": "as swatches", "Map (US states)": "applied to a map"}.get(kind, f"applied to a {kind.lower()}")
     fig.suptitle(f"The {language} grounded palette, {what}", x=0.01, ha="left",
                  fontsize=13, fontweight="bold")
     plt.tight_layout()

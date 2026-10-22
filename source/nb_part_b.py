@@ -674,3 +674,56 @@ _i = next(k for k, c in enumerate(cells) if c["cell_type"] == "markdown" and _sr
 cells[_i] = md("""## 6 · Two axes, one picture: the colour identity scorecard
 
 Each disc is a test colour. Across: its **naming confidence**, for your audience on average unless you choose otherwise. Up: its **nearest-colour ΔE₀₀**, the distance to the nearest other test colour; with *Vision* set to a condition, it is the ΔE₀₀ between the simulated colours (for example, between deuteranopia-simulated colours). The axes are fixed, so different palettes and conditions can be compared directly. The dashed lines are the masterclass thresholds: ΔE₀₀ 10 and 50% confidence. The table underneath gives the numbers, with each language's name and confidence.""")
+
+
+# ── the map: one panel per test colour ──
+_k = next(k for k, c in enumerate(cells) if c["cell_type"] == "markdown" and "".join(c["source"]).startswith("The same information as a map"))
+cells[_k] = md("""The same information as maps, one panel per test colour, on the CIELAB a*–b* plane seen from above, the space the ΔE₀₀ distances are calculated in (lightness isn't shown). Each numbered circle is a test colour; the lines lead to where each language's name for it is centred. Every panel has the same scale, so line lengths compare: a long line means that language's name points somewhere quite different.""")
+
+# ── review fixes, 22 October ──
+def _s(c): return "".join(c["source"])
+def _find_md(prefix): return next(k for k, c in enumerate(cells) if c["cell_type"] == "markdown" and _s(c).startswith(prefix))
+def _find_code(part): return next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and part in _s(c))
+
+# 4 · one introduction paragraph instead of two
+_m = _s(cells[0])
+_a = _m.index("**The story.**"); _b = _m.index("**How to use this notebook.**")
+cells[0] = md(_m[:_a] + "**The story.** You are a designer working in your own language, choosing a small palette of SDG colours, your **test colours**, for an international audience. You'll check whether everyone can tell them apart and whether your audience calls them what you call them, which is where a palette can succeed on one axis and fail on the other, and then see whether an AI gets the names right. In Part C you'll fix the palette for each audience.\n\n" + _m[_b:])
+_k = _find_md("## 3 · Your palette")
+cells[_k] = md(_s(cells[_k]).replace("These are your **test colours** for the rest of Parts B and C.", "You'll use them for the rest of Parts B and C."))
+
+# 9 · one short step in the Colour Spinner interface itself
+_k = _find_md("## 5 · Do you and your audience")
+_m = _s(cells[_k])
+cells[_k] = md(_m.replace("Two measures come out of this step:",
+    "**First, try it in the Colour Spinner.** Open [colornaming.net/spinner](https://colornaming.net/spinner), type the hex code of one of your test colours into the Picker and choose your language. Look at the Namer (the top name and its confidence), then switch the language to one of your audience's and watch the name change. The next cells do the same for every test colour and language at once.\n\nTwo measures come out of this step:", 1))
+
+# 8 · collapse long code into titled cells
+for part, title in [("rows, problems = [], []", "Ask the Colour Spinner for every name"),
+                    ("PROMPT_B = f", "The prompt for your AI"),
+                    ("ai_names = collected_answers()", "Compare the AI's names with your audience's")]:
+    _k = _find_code(part)
+    cells[_k] = code(f"#@title {title}\n" + _s(cells[_k]), hidden=True)
+
+# 1 · the explanation goes before the comparison; section 8 gets its own cell
+_k = _find_md("A match on a colour with low confidence says little")
+_expl = ("**Reading the comparison.** Each cell shows the speakers' top name and its confidence, then the AI's answer. A match on a colour with low "
+         "confidence says little: when the Spinner's confidence in its top name is only around 30%, other names are also defensible. For every name "
+         "that differs, the cell also shows where the AI's name is centred for speakers of that language (the Spinner's Mapper) and its ΔE₀₀ from the "
+         "test colour. Close: the AI chose a plausible neighbouring name. Far away, or not a name speakers use at all: the AI's name would mislead them. "
+         "Large distances on confidently named colours are the ones to bring to the group.")
+_save = _s(cells[_k])[_s(cells[_k]).index("## 8 · Save your results for Part C"):]
+del cells[_k]
+_c = _find_code("ai_names = collected_answers()")
+cells.insert(_c, md(_expl))
+_d = _find_code('out.to_csv("partB_results.csv"')
+cells.insert(_d, md(_save))
+
+# 5, 7 · the scorecard is optional, and shows the plot only
+_k = _find_md("## 6 · Two axes, one picture")
+_m = _s(cells[_k])
+_m = _m.replace("## 6 · Two axes, one picture: the colour identity scorecard", "## 6 · Two axes, one picture: the colour identity scorecard (optional, if time allows)")
+_m = _m.replace(" The table underneath gives the numbers, with each language's name and confidence.", "")
+cells[_k] = md(_m)
+_k = _find_code("card = scorecard(")
+cells[_k] = code(_s(cells[_k]).replace("\nshow_scorecard(card)", ""), hidden=False)

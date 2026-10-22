@@ -632,7 +632,7 @@ cells[_i] = md("".join(cells[_i]["source"]).replace("| 5–7 | See it in use, ex
 _k = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "".join(c["source"]).startswith("#@title Preview"))
 cells[_k] = code("""#@title Preview { run: "auto" }
 PreviewLanguage = "British English"  #@param ["American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]
-AppliedTo = "Bar chart"  #@param ["Colour swatches", "Bar chart", "Donut chart", "Line chart", "Scatter plot", "Map (regions)"]
+AppliedTo = "Bar chart"  #@param ["Colour swatches", "Bar chart", "Donut chart", "Line chart", "Scatter plot", "Map (US states)"]
 PreviewVision = "Deuteranopia"  #@param ["Typical", "Protanopia", "Deuteranopia", "Tritanopia", "Age 40", "Age 60", "Age 80"]
 
 preview_applications(pal, PreviewLanguage, PreviewVision, kind=AppliedTo,
@@ -640,4 +640,54 @@ preview_applications(pal, PreviewLanguage, PreviewVision, kind=AppliedTo,
 _i = next(k for k, c in enumerate(cells) if c["cell_type"] == "markdown" and "".join(c["source"]).startswith("## 5 · See the palette in use"))
 cells[_i] = md("""## 5 · See the palette in use
 
-Choose a language and what to apply its grounded palette to: swatches, a bar, donut, line or scatter chart, or a map, as in our palette explorer. The palette is shown with typical colour vision and, beside it, with another kind of vision. Each preview you make is saved for the download.""")
+Choose a language and what to apply its grounded palette to: swatches, a bar, donut, line or scatter chart, or a map of the US states, as in our palette explorer (the values on the charts and map are the explorer's example data). The palette is shown with typical colour vision and, beside it, with another kind of vision. Each preview you make is saved for the download.""")
+
+# ── no separate "Save your finding" step: reflections go into the questionnaire ──
+cells[:] = [c for c in cells if not (c["cell_type"] == "code" and "".join(c["source"]).startswith("#@title Save your finding"))]
+for _k, _c in enumerate(cells):
+    if _c["cell_type"] != "markdown": continue
+    _s = "".join(_c["source"])
+    _s = _s.replace("The card shows the name where the AI's colour was furthest from what speakers mean; type another name to choose a different one. Then add your interpretation and save the card for the plenary.",
+                    "The card shows the name where the AI's colour was furthest from what speakers mean; type another name to choose a different one. Talk it through with your partner, and bring it to the plenary.")
+    _s = _s.replace("| 5–7 | See it in use, export it, and save your finding | 10 min |", "| 5–7 | See it in use, export it, and pick your finding | 10 min |")
+    cells[_k] = md(_s)
+
+# ── link the finding card to the questionnaire, without making either compulsory ──
+_i = next(k for k, c in enumerate(cells) if c["cell_type"] == "markdown" and "".join(c["source"]).startswith("## 7 · Your most striking finding"))
+cells[_i] = md("".join(cells[_i]["source"]).rstrip() + " If you take part in the optional questionnaire at the end, it asks about your most striking finding, so it may help to note this one, or whatever struck you most.")
+
+
+# ── the map: one panel per test colour, no red lines ──
+_k = next(k for k, c in enumerate(cells) if c["cell_type"] == "markdown" and "".join(c["source"]).startswith("The same comparison as a map"))
+cells[_k] = md("""The same comparison as maps, one panel per test colour from Part B, on the CIELAB a*–b* plane used there. The longer the line between the AI's colour (outlined) and the speakers' best example (filled), the further the AI is from what speakers mean. Lines that all point the same way suggest a systematic bias, for instance towards English focal colours.""")
+
+# ── review fixes, 22 October ──
+def _s(c): return "".join(c["source"])
+def _find_md(prefix): return next(k for k, c in enumerate(cells) if c["cell_type"] == "markdown" and _s(c).startswith(prefix))
+def _find_code(part): return next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and part in _s(c))
+# 2 · timing within the proposal's 60 minutes; 11 · the benchmark figure as reported
+_k = _find_md("# Colour Brings People Together")
+_m = _s(cells[_k])
+_m = _m.replace("a current large language model's colours were on average more than 17 ΔE from speakers' focal colours,",
+                "a current large language model's colours were on average more than 17 ΔE from speakers' focal colours (as reported in the paper),")
+_m = _m.replace("| 8 | Optional questionnaire | 10 min, at the end |\n| | Plenary discussion | 15 min |",
+                "| | Plenary discussion | 15 min |\n\nThat makes 60 minutes. The optional questionnaire (section 8, about 10 minutes) is for after the plenary or later in the day.")
+cells[_k] = md(_m)
+# 8 · collapse long code
+for part, title in [("PROMPT_C = f", "The prompt for your AI"),
+                    ("pal = add_best_examples(pal, spinner)", "Compare the AI's colours with the speakers' best examples")]:
+    _k = _find_code(part)
+    _src = _s(cells[_k])
+    if not _src.startswith("#@title"):
+        _src = f"#@title {title}\n" + _src
+    cells[_k] = code(_src, hidden=True)
+_k = _find_code("#@title Ground and repair")
+cells[_k] = code(_s(cells[_k]), hidden=True)
+# 6 · the footer credits the library once
+_k = _find_md("---")
+cells[_k] = md(_s(cells[_k]).replace("Colour science with the colour-science library: CIELAB and CIEDE2000.*", "Colour science: the colour-science library.*"))
+# the Part C check now shows only each palette's closest pair
+_k = _find_md("## 4 · Ground the palette")
+cells[_k] = md(_s(cells[_k]).replace(
+    "The table underneath shows, for each language's AI and grounded palette and each viewing condition, the two closest colours as they look there and the ΔE₀₀ between the simulated colours.",
+    "The table underneath shows, for each language's AI and grounded palette, its two closest colours under the viewing condition where they are closest, as they look there, and the ΔE₀₀ between the simulated colours."))
