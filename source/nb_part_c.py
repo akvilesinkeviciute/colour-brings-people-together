@@ -615,3 +615,29 @@ for _k, _c in enumerate(cells):
         _s = _s.replace("Where two colours are closer than the threshold under any viewing condition,",
                         "Where two colours are closer than ΔE₀₀ 10 under any viewing condition,")
         cells[_k] = md(_s)
+
+# ── the optional questionnaire, last ──
+_f = next(k for k, c in enumerate(cells) if c["cell_type"] == "markdown" and "".join(c["source"]).startswith("---"))
+cells[_f:_f] = [
+md("""## 8 · Tell us how it went (optional)
+
+We'd be grateful if you could spend about 10 minutes on a short, anonymous questionnaire about the session. It is optional and separate from the masterclass; the information sheet at the start of the form explains how your answers are used."""),
+code("show_questionnaire()"),
+]
+_i = next(k for k, c in enumerate(cells) if c["cell_type"] == "markdown" and "".join(c["source"]).startswith("# Colour Brings People Together"))
+cells[_i] = md("".join(cells[_i]["source"]).replace("| 5–7 | See it in use, export it, and save your finding | 10 min |",
+                                                      "| 5–7 | See it in use, export it, and save your finding | 10 min |\n| 8 | Optional questionnaire | 10 min, at the end |"))
+
+# ── previews in the style of the palette explorer ──
+_k = next(k for k, c in enumerate(cells) if c["cell_type"] == "code" and "".join(c["source"]).startswith("#@title Preview"))
+cells[_k] = code("""#@title Preview { run: "auto" }
+PreviewLanguage = "British English"  #@param ["American English", "British English", "French", "Greek", "OtjiHimba", "Spanish"]
+AppliedTo = "Bar chart"  #@param ["Colour swatches", "Bar chart", "Donut chart", "Line chart", "Scatter plot", "Map (regions)"]
+PreviewVision = "Deuteranopia"  #@param ["Typical", "Protanopia", "Deuteranopia", "Tritanopia", "Age 40", "Age 60", "Age 80"]
+
+preview_applications(pal, PreviewLanguage, PreviewVision, kind=AppliedTo,
+                     path=f"preview_{PreviewLanguage.replace(' ', '_')}_{AppliedTo.split(' ')[0].lower()}.png")""", hidden=False)
+_i = next(k for k, c in enumerate(cells) if c["cell_type"] == "markdown" and "".join(c["source"]).startswith("## 5 · See the palette in use"))
+cells[_i] = md("""## 5 · See the palette in use
+
+Choose a language and what to apply its grounded palette to: swatches, a bar, donut, line or scatter chart, or a map, as in our palette explorer. The palette is shown with typical colour vision and, beside it, with another kind of vision. Each preview you make is saved for the download.""")

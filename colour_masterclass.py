@@ -1932,46 +1932,115 @@ def palette_card(pal, languages, path=None, title="Grounded palette", display_it
         fig.savefig(path, dpi=200, bbox_inches="tight")
     plt.show() if display_it else plt.close(fig)
 
-def preview_applications(pal, language, vision="Typical", path=None):
-    """The grounded palette for one language, applied to a chart, an interface and wayfinding labels,
-    as seen with typical vision and under `vision`."""
+def _explorer_data(n):
+    """The same synthetic data as the palette explorer (seeded generator), so the previews match it."""
+    state = [7]
+    def R():
+        state[0] = (state[0] * 1664525 + 1013904223) & 0xFFFFFFFF
+        v = state[0] - (1 << 32) if state[0] >= (1 << 31) else state[0]
+        return (v & 0xFFFFFFFF) / 4294967296
+    MAXN = 40
+    bar = [round(R() * 55 + 35) for _ in range(MAXN)]
+    line = [[round(R() * 55 + 25) for _ in range(8)] for _ in range(MAXN)]
+    def randn():
+        u = v = 0.0
+        while u == 0: u = R()
+        while v == 0: v = R()
+        return np.sqrt(-2.0 * np.log(u)) * np.cos(2.0 * np.pi * v)
+    centres = []
+    for _ in range(MAXN):
+        tries = 0
+        while True:
+            cx, cy = R() * 70 + 15, R() * 70 + 15; tries += 1
+            if tries >= 12 or not any(np.hypot(c[0] - cx, c[1] - cy) < 16 for c in centres): break
+        centres.append((cx, cy))
+    clamp = lambda v: min(98, max(2, round(v)))
+    scat = [[(clamp(cx + randn() * 6), clamp(cy + randn() * 6)) for _ in range(8)] for cx, cy in centres]
+    return bar[:n], line[:n], scat[:n]
+
+APPLICATIONS = ["Colour swatches", "Bar chart", "Donut chart", "Line chart", "Scatter plot", "Map (regions)"]
+
+def _draw_application(ax, kind, cols, names, data):
+    bar, line, scat = data
+    grid = "#EDEDEA"
+    for sp in ax.spines.values(): sp.set_visible(False)
+    ax.tick_params(length=0, labelsize=8.5, colors=MUTED)
+    n = len(cols)
+    if kind == "Colour swatches":
+        ax.set_xlim(0, n); ax.set_ylim(1.35, 0); ax.axis("off")
+        for k, (c, nm) in enumerate(zip(cols, names)):
+            ax.add_patch(mpl.patches.FancyBboxPatch((k + 0.06, 0.05), 0.88, 1.15, boxstyle="round,pad=0,rounding_size=0.06",
+                         fc="white", ec=(0, 0, 0, 0.12), lw=0.6, mutation_aspect=1.2))
+            ax.add_patch(mpl.patches.FancyBboxPatch((k + 0.06, 0.05), 0.88, 0.82, boxstyle="round,pad=0,rounding_size=0.06",
+                         fc=c, ec="none", mutation_aspect=1.2))
+            ax.text(k + 0.5, 1.04, nm, ha="center", va="center", fontsize=8.5, color=MUTED)
+    elif kind == "Bar chart":
+        for k, (c, v) in enumerate(zip(cols, bar)):
+            ax.add_patch(mpl.patches.FancyBboxPatch((k - 0.36, 0), 0.72, v, boxstyle="round,pad=0,rounding_size=0.08",
+                         fc=c, ec="none", mutation_aspect=60))
+        ax.set_xlim(-0.7, n - 0.3); ax.set_ylim(0, 100)
+        ax.set_xticks(range(n), [chr(65 + k) for k in range(n)]); ax.set_yticks(range(0, 101, 20))
+        ax.yaxis.grid(True, color=grid, lw=0.8, alpha=1); ax.set_axisbelow(True)
+    elif kind == "Donut chart":
+        ax.pie(bar, colors=cols, startangle=90, counterclock=False,
+               wedgeprops=dict(width=0.48, edgecolor="white", linewidth=2.5))
+        ax.set_aspect("equal")
+    elif kind == "Line chart":
+        x = np.arange(8); xs = np.linspace(0, 7, 120)
+        for c, ys in zip(cols, line):
+            ys = np.asarray(ys, float)
+            # Catmull-Rom smoothing, like the explorer's curved lines
+            pts = np.concatenate([[ys[0]], ys, [ys[-1]]])
+            sm = []
+            for t in xs:
+                i = min(int(t), 6); u = t - i
+                p0, p1, p2, p3 = pts[i], pts[i + 1], pts[i + 2], pts[i + 3]
+                sm.append(0.5 * (2 * p1 + (-p0 + p2) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u ** 2 + (-p0 + 3 * p1 - 3 * p2 + p3) * u ** 3))
+            ax.fill_between(xs, sm, 0, color=c, alpha=0.035, lw=0)
+            ax.plot(xs, sm, color=c, lw=2.2); ax.scatter(x, ys, s=12, color=c, zorder=3)
+        ax.set_xticks(x, ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug"])
+        ax.grid(True, color=grid, lw=0.8, alpha=1); ax.set_axisbelow(True); ax.set_ylim(0, 100)
+    elif kind == "Scatter plot":
+        for c, pts in zip(cols, scat):
+            xs_, ys_ = zip(*pts)
+            ax.scatter(xs_, ys_, s=46, color=c, alpha=0.73, edgecolor=c, lw=1)
+        ax.set_xlim(0, 100); ax.set_ylim(0, 100); ax.grid(True, color=grid, lw=0.8, alpha=1); ax.set_axisbelow(True)
+    elif kind == "Map (regions)":
+        layout = ["01234", "5x67x", "x89xx"]                    # a schematic map of regions, as in the explorer
+        regions = ["North", "North East", "Coast", "Highlands", "East", "West", "Centre", "Lakes", "South West", "South"]
+        ax.set_xlim(0, 5); ax.set_ylim(3, 0); ax.axis("off"); ax.set_aspect("equal")
+        for r_, row in enumerate(layout):
+            for c_, ch in enumerate(row):
+                if ch == "x": continue
+                k = int(ch); col = cols[k % n]
+                ax.add_patch(mpl.patches.FancyBboxPatch((c_ + 0.05, r_ + 0.05), 0.9, 0.9, boxstyle="round,pad=0,rounding_size=0.1",
+                             fc=col, ec=(0, 0, 0, 0.12), lw=0.6))
+                ax.text(c_ + 0.5, r_ + 0.5, regions[k], ha="center", va="center", fontsize=7.5, fontweight="bold",
+                        color=_ink_on(col), wrap=True)
+
+def preview_applications(pal, language, vision="Typical", path=None, kind="Bar chart"):
+    """The grounded palette for one language applied to a chart, map or swatches, in the style of the
+    palette explorer, with typical vision and under `vision` side by side."""
     p = pal[(pal.language == language) & pal.grounded_hex.notna()]
     if p.empty:
         show(f"<b>No grounded palette for {_h(language)}.</b> {small('Choose one of: ' + _h(', '.join(dict.fromkeys(pal.language))))}")
         return
     names, hexes = list(p["name"]), list(p.grounded_hex)
-    rows = ["Typical"] + ([vision] if vision != "Typical" else [])
-    fig, axes = plt.subplots(len(rows), 3, figsize=(13, 3.6 * len(rows)), squeeze=False,
-                             gridspec_kw={"width_ratios": [1.2, 1, 1]})
-    vals = [5, 8, 6, 9, 4, 7, 3, 6][:len(names)] + [5] * max(0, len(names) - 8)
-    for r, cond in enumerate(rows):
+    data = _explorer_data(len(hexes))
+    conds = ["Typical"] + ([vision] if vision != "Typical" else [])
+    fig, axes = plt.subplots(1, len(conds), figsize=(6.2 * len(conds), 4.3), squeeze=False)
+    fig.patch.set_facecolor("white")
+    for ax, cond in zip(axes[0], conds):
         cols = [simulate(h, cond) for h in hexes]
-        ax = axes[r][0]                                     # a chart with a legend
-        ax.bar(range(len(names)), vals, color=cols, width=0.65)
-        ax.set_xticks(range(len(names)), names, fontsize=9, rotation=20 if len(names) > 4 else 0)
-        ax.set_yticks([]); ax.spines["left"].set_visible(False)
-        ax.set_title(f"Chart · {condition_label(cond, ' ')}", fontsize=11)
-        n = len(names)
-        ax = axes[r][1]                                     # interface: buttons and status dots
-        ax.set_xlim(0, 6); ax.set_ylim(n * 1.1 + 0.2, -0.4); ax.set_aspect("equal"); ax.axis("off")
-        for k, (nm, c) in enumerate(zip(names, cols)):
-            y = k * 1.1 + 0.3
-            ax.add_patch(mpl.patches.FancyBboxPatch((0.2, y - 0.36), 2.9, 0.72,
-                         boxstyle="round,pad=0,rounding_size=0.36", fc=c, ec="none"))
-            ax.text(1.65, y, nm, ha="center", va="center", fontsize=9.5, fontweight="bold", color=_ink_on(c))
-            ax.add_patch(mpl.patches.Circle((3.65, y), 0.22, fc=c, ec="none"))
-            ax.text(4.05, y, "status", va="center", fontsize=9, color=MUTED)
-        ax.set_title(f"Interface · {condition_label(cond, ' ')}", fontsize=11)
-        ax = axes[r][2]                                     # wayfinding: colour-coded routes with labels
-        ax.set_xlim(0, 10); ax.set_ylim(n * 1.6 + 0.6, -0.6); ax.set_aspect("equal"); ax.axis("off")
-        for k, (nm, c) in enumerate(zip(names, cols)):
-            y = k * 1.6 + 0.4
-            ax.plot([0.4, 2.6, 3.6, 6.4], [y, y, y + 0.6, y + 0.6], color=c, lw=6, solid_capstyle="round",
-                    solid_joinstyle="round")
-            ax.add_patch(mpl.patches.Circle((7.0, y + 0.6), 0.42, fc=c, ec="white", lw=2))
-            ax.text(7.7, y + 0.6, nm, va="center", fontsize=9.5, color=INK)
-        ax.set_title(f"Wayfinding · {condition_label(cond, ' ')}", fontsize=11)
-    fig.suptitle(f"The {language} grounded palette in use", x=0.01, ha="left", fontsize=14, fontweight="bold")
+        _draw_application(ax, kind, cols, names, data)
+        ax.set_title(condition_label(cond, " ") if cond != "Typical" else "Typical colour vision", fontsize=11, loc="left", pad=10)
+        if kind != "Colour swatches":          # a legend of small squares, as in the explorer
+            handles = [mpl.patches.Patch(color=c, label=nm) for c, nm in zip(cols, names)]
+            ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.1 if kind not in ("Donut chart", "Map (regions)") else -0.02),
+                      ncol=min(len(names), 4), frameon=False, fontsize=9, handlelength=0.8, handleheight=0.8, labelcolor=MUTED)
+    what = {"Colour swatches": "as swatches", "Map (regions)": "applied to a map"}.get(kind, f"applied to a {kind.lower()}")
+    fig.suptitle(f"The {language} grounded palette, {what}", x=0.01, ha="left",
+                 fontsize=13, fontweight="bold")
     plt.tight_layout()
     if path:
         fig.savefig(path, dpi=200, bbox_inches="tight")
@@ -2123,5 +2192,22 @@ def save_finding(pal, name="", pattern="", designer_fix="", stem="my_finding"):
     show(f"<b>Saved your finding</b> {small(f'{stem}.png (a card for the plenary) and {stem}.json (the data), in {stem}.zip.')}")
     download(f"{stem}.zip")
 
-TOOLKIT_VERSION = "2026-10-20 11:38"
+# ── The optional questionnaire at the end of the masterclass ──────────────
+QUESTIONNAIRE_URL = "https://forms.cloud.microsoft/r/bQ2e8faHsx"          # the Microsoft Forms link; the QR code for the slides comes from Forms itself
+
+def show_questionnaire(url=None):
+    """A button that opens the optional, anonymous questionnaire in a new tab."""
+    url = url or QUESTIONNAIRE_URL
+    if not url:
+        show(f"<b>The questionnaire link will appear here.</b> {small('Ask the facilitators for the link or scan the QR code on the screen.')}")
+        return
+    show(f'''<div style="border:1px solid #E4E4E0;border-radius:10px;padding:16px 18px;max-width:620px">
+<div style="font-weight:700;font-size:15px;margin-bottom:6px">Before you go: a short questionnaire (optional)</div>
+<div style="color:{MUTED};font-size:13px;margin-bottom:12px">About 10 minutes and anonymous. Please read the participant information sheet at the start of the form.
+Taking part is voluntary and separate from the masterclass.</div>
+<a href="{url}" target="_blank" rel="noopener" style="display:inline-block;padding:8px 16px;border-radius:6px;background:{INK};
+color:#FFFFFF;font-weight:700;font-size:13px;text-decoration:none">Open the questionnaire ↗</a>
+<div style="margin-top:10px">{small(_h(url))}</div></div>''')
+
+TOOLKIT_VERSION = "2026-10-22 15:11"
 print(f"Toolkit ready ✓  version {TOOLKIT_VERSION}  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))
