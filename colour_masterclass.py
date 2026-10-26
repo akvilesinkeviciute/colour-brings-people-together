@@ -2775,7 +2775,9 @@ def _draw_application(ax, kind, cols, names, data):
                          fc="white", ec=(0, 0, 0, 0.12), lw=0.6, mutation_aspect=1.2))
             ax.add_patch(mpl.patches.FancyBboxPatch((k + 0.06, 0.05), 0.88, 0.82, boxstyle="round,pad=0,rounding_size=0.06",
                          fc=c, ec="none", mutation_aspect=1.2))
-            ax.text(k + 0.5, 1.04, nm, ha="center", va="center", fontsize=14 if n <= 4 else 12 if n <= 6 else 10,
+            short = n > 8 and nm.split(" ", 1)[0].isdigit()          # many colours: the SDG number, then the name below
+            ax.text(k + 0.5, 1.04, nm.split(" ", 1)[0] if short else nm, ha="center", va="center",
+                    fontsize=14 if n <= 4 else 12 if n <= 6 else 10 if n <= 8 else 9,
                     color=INK, fontweight="bold")
     elif kind == "Bar chart":
         for k, (c, v) in enumerate(zip(cols, bar)):
@@ -2783,7 +2785,9 @@ def _draw_application(ax, kind, cols, names, data):
                          fc=c, ec="none", mutation_aspect=60))
         pad = (max(n, 4) - n) / 2                    # at least four slots, so few bars stay bar-shaped, centred
         ax.set_xlim(-0.7 - pad, n - 0.3 + pad); ax.set_ylim(0, 100)
-        ax.set_xticks(range(n), [chr(65 + k) for k in range(n)]); ax.set_yticks(range(0, 101, 20))
+        ticks = [nm.split(" ", 1)[0] for nm in names] if n > 8 and all(nm.split(" ", 1)[0].isdigit() for nm in names) \
+                else [chr(65 + k) for k in range(n)]
+        ax.set_xticks(range(n), ticks); ax.set_yticks(range(0, 101, 20))
         ax.yaxis.grid(True, color=grid, lw=0.8, alpha=1); ax.set_axisbelow(True)
     elif kind == "Donut chart":
         ax.pie(bar, colors=cols, startangle=90, counterclock=False,
@@ -2838,33 +2842,61 @@ def _draw_application(ax, kind, cols, names, data):
                 ax.add_patch(mpl.patches.Polygon(ring_, closed=True, fc=cols[min(k, n - 1)], ec="white", lw=0.4))
         ax.autoscale(); ax.set_aspect("equal"); ax.invert_yaxis(); ax.axis("off")
 
-def preview_applications(pal, language, vision="Typical", path=None, kind="Bar chart"):
+def full_sdg_palette(pal, language):
+    """All 17 SDG colours for one language: your test colours replaced by their grounded colours (with their
+    names), the others as the UN's. Returns (labels, hexes, grounded flags)."""
+    grounded = {norm(r["name"]): (r["name"], r.grounded_hex) for _, r in pal[pal.language == language].iterrows()
+                if isinstance(r.grounded_hex, str)}
+    by = {}
+    if _BY_SDG is not None:
+        for _, r in _BY_SDG[_BY_SDG.language == language].iterrows():
+            g = grounded.get(norm(r["name"]))
+            if g: by[int(r.sdg)] = g
+    labels, hexes, flags = [], [], []
+    for i, h in SDG.hex.items():
+        if i in by:
+            labels.append(f"{i} {by[i][0]}"); hexes.append(by[i][1]); flags.append(True)
+        else:
+            labels.append(f"{i}"); hexes.append(h); flags.append(False)
+    return labels, hexes, flags
+
+def preview_applications(pal, language, vision="Typical", path=None, kind="Bar chart", colours="Your test colours"):
     """The grounded palette for one language applied to a chart, map or swatches, in the style of the
-    palette explorer, with typical vision and under `vision` side by side."""
+    palette explorer, with typical vision and under `vision` side by side. `colours`: just your grounded
+    test colours, or all 17 SDG colours with your test colours grounded."""
     language = _available_language(pal, language, "PreviewLanguage")
     p = pal[(pal.language == language) & pal.grounded_hex.notna()]
     if p.empty:
         show(f"<b>No grounded palette for {_h(language)}.</b> {small('Choose one of: ' + _h(', '.join(dict.fromkeys(pal.language))))}")
         return
-    names, hexes = list(p["name"]), list(p.grounded_hex)
+    full = colours.startswith("All 17")
+    if full and (_BY_SDG is None or not len(_BY_SDG)):
+        show(small("All 17 SDG colours needs the names from Part B, so this shows your test colours."))
+        full = False
+    if full:
+        names, hexes, _ = full_sdg_palette(pal, language)
+    else:
+        names, hexes = list(p["name"]), list(p.grounded_hex)
     data = _explorer_data(len(hexes))
     if kind == "Map (world)" and _world() is None:          # no download: the US states map, built in, instead
         show(small("The world map couldn't be downloaded, so here is the US states map instead."))
         kind = "Map (US states)"
     conds = ["Typical"] + ([vision] if vision != "Typical" else [])
-    fig, axes = plt.subplots(1, len(conds), figsize=(6.2 * len(conds), 4.3), squeeze=False)
+    many = len(hexes) > 8
+    fig, axes = plt.subplots(1, len(conds), figsize=(6.2 * len(conds), 4.3 + (1.0 if many else 0)), squeeze=False)
     fig.patch.set_facecolor("white")
     for ax, cond in zip(axes[0], conds):
         cols = [simulate(h, cond) for h in hexes]
         _draw_application(ax, kind, cols, names, data)
         ax.set_title(condition_label(cond, " ") if cond != "Typical" else "Typical colour vision", fontsize=11, loc="left", pad=10)
-        if kind != "Colour swatches":          # a legend of small squares, as in the explorer
+        if kind != "Colour swatches" or many:  # a legend of small squares, as in the explorer
             handles = [mpl.patches.Patch(color=c, label=nm) for c, nm in zip(cols, names)]
             ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.1 if kind not in ("Donut chart", "Map (US states)", "Map (world)") else -0.02),
-                      ncol=min(len(names), 4), frameon=False, fontsize=9, handlelength=0.8, handleheight=0.8, labelcolor=MUTED)
+                      ncol=min(len(names), 6 if many else 4), frameon=False, fontsize=8 if many else 9,
+                      handlelength=0.8, handleheight=0.8, labelcolor=MUTED)
     what = {"Colour swatches": "as swatches", "Map (US states)": "applied to a map of the US states",
             "Map (world)": "applied to a world map"}.get(kind, f"applied to a {kind.lower()}")
-    fig.suptitle(f"The {language} grounded palette, {what}", x=0.01, ha="left",
+    fig.suptitle(f"The {language} grounded palette, {what}" + (" (all 17 SDG colours)" if full else ""), x=0.01, ha="left",
                  fontsize=13, fontweight="bold")
     # the maps' sources are credited in the notebook's credits cell, at the end
     plt.tight_layout()
@@ -2935,6 +2967,17 @@ def export_palette(pal, languages, stem="grounded_palette"):
         files += previews; rows.append(["<code>preview_….png</code>", "The designs you previewed in section 5"])
     export.round(2).to_csv(f"{stem}.csv", index=False)
     files.append(f"{stem}.csv"); rows.append([f"<code>{stem}.csv</code>", "Every colour's hex code, with the evidence for any change"])
+    if _BY_SDG is not None and len(_BY_SDG):
+        full_rows = []
+        for lang in languages:
+            if pal[(pal.language == lang) & pal.grounded_hex.notna()].empty: continue
+            labels, hexes, flags = full_sdg_palette(pal, lang)
+            for i, (lab, h, f) in enumerate(zip(labels, hexes, flags), 1):
+                full_rows.append({"language": lang, "sdg": i, "goal": SDG.goal[i], "hex": h,
+                                  "source": "grounded" if f else "UN", "name": lab.split(" ", 1)[1] if f else ""})
+        pd.DataFrame(full_rows).to_csv("grounded_sdg_palette.csv", index=False)
+        files.append("grounded_sdg_palette.csv")
+        rows.append(["<code>grounded_sdg_palette.csv</code>", "All 17 SDG colours for each audience, with your test colours grounded"])
     with zipfile.ZipFile(f"{stem}.zip", "w") as z:
         for fn in files:
             z.write(fn)
@@ -3197,5 +3240,5 @@ def open_part_c():
          f'background:{INK};color:#FFFFFF;font-weight:700;font-size:13px;text-decoration:none;margin-top:6px">Open Part C ↗</a>'
          f'<div style="font-size:12px;color:{MUTED};margin-top:6px">Part C opens in a new tab; upload <code>partB_results.csv</code> there.</div>')
 
-TOOLKIT_VERSION = "2026-10-26 23:01"
+TOOLKIT_VERSION = "2026-10-26 23:39"
 print(f"Toolkit ready ✓  version {TOOLKIT_VERSION}  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))
