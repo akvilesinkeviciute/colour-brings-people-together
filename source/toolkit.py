@@ -20,9 +20,9 @@ try:
 except ImportError:
     IN_COLAB = False
 
-# ── The six languages currently covered by the Colour Spinner ────────────
+# ── The languages currently covered by the Colour Spinner ────────────────
 SPINNER_LANGUAGES = ["American English", "British English", "French",
-                     "Greek", "OtjiHimba", "Spanish"]
+                     "Greek", "OtjiHimba", "Serbian", "Spanish"]
 
 # ── UN Sustainable Development Goal palette ──────────────────────────────
 #    Hex values from the UN SDG communications guidelines.
@@ -150,7 +150,8 @@ SPINNER_API = {
                          "Age 60": "40-60", "Age 80": "60-80"},
     # Language numbers follow the order of the Spinner's language menu.
     "language_ids": {"American English": 1, "British English": 2, "French": 3,
-                     "Greek": 4, "OtjiHimba": 5, "Spanish": 6},
+                     "Greek": 4, "OtjiHimba": 5, "Serbian": 6,
+                     "Spanish": 7},                    # the menu values, alphabetical (checked 26 October 2026)
 }
 
 def _strip(html_text):
@@ -195,6 +196,8 @@ def parse_color_picker(page):
         "members": _mapper_members(page),
     }
 
+_NEARBY_SHOWN = set()       # colours already reported as looked up via a neighbour
+
 class ApiSpinner:
     """Talks to the Colour Spinner the same way its web page does."""
     def __init__(self, cfg=SPINNER_API, timeout=30):
@@ -211,21 +214,50 @@ class ApiSpinner:
         except KeyError:
             raise KeyError(f"The Colour Spinner has no language called '{language}'.")
 
+    def _post_colour(self, hex_, language, target):
+        """POST one colour to the Picker. The Spinner's server occasionally fails (HTTP 500) for particular colour
+        values: retry once, then try the nearest neighbouring colours (±1 or ±2 per channel, far below anything
+        visible) and use the first that works. Returns the response and the colour actually looked up."""
+        import time, itertools
+        r0, g0, b0 = (int(v) for v in hex_to_rgb(hex_))
+        def post(r, g, b):
+            form = {"language-select": self._lang(language), "translation-select": self._lang(target),
+                    "age-cvd-simulation-select": "none", "synonyms": "on", "antonyms": "on",
+                    "r": r, "g": g, "b": b, "exact_colour_id": ""}
+            return self.http.post(self.cfg["base_url"] + self.cfg["color_picker"], data=form, timeout=self.timeout)
+        resp = post(r0, g0, b0)
+        if resp.status_code >= 500:
+            time.sleep(1.0); resp = post(r0, g0, b0)
+        if resp.status_code == 200:
+            return resp, hex_.upper()
+        if resp.status_code >= 500:
+            steps = [d for d in itertools.product((-1, 0, 1), repeat=3) if any(d)] + \
+                    [d for d in itertools.product((-2, 0, 2), repeat=3) if any(d)]
+            steps.sort(key=lambda d: sum(abs(x) for x in d))
+            for dr, dg, db in steps[:12]:
+                r, g, b = (min(255, max(0, v + dv)) for v, dv in ((r0, dr), (g0, dg), (b0, db)))
+                alt = post(r, g, b)
+                if alt.status_code == 200:
+                    return alt, rgb_to_hex((r, g, b)).upper()
+            raise RuntimeError(f"The Colour Spinner's server returned an error ({resp.status_code}) for this colour, "
+                               "even for its nearest neighbours. This is a problem on the Spinner's side, not your "
+                               "connection: try again in a minute, or set Backend to 'Copied from the browser'.")
+        raise RuntimeError(f"The Colour Spinner returned {resp.status_code}. Check your internet connection, "
+                           "or set Backend to 'Copied from the browser'.")
+
     def lookup(self, hex_, language, target=None):
         """Everything the Spinner shows for one colour: name, confidence, best example, translation."""
         target = target or language
         key = (hex_.upper(), language, target)
         if key not in self._pages:
-            r, g, b = (int(v) for v in hex_to_rgb(hex_))
-            form = {"language-select": self._lang(language), "translation-select": self._lang(target),
-                    "age-cvd-simulation-select": "none", "synonyms": "on", "antonyms": "on",
-                    "r": r, "g": g, "b": b, "exact_colour_id": ""}
-            resp = self.http.post(self.cfg["base_url"] + self.cfg["color_picker"], data=form,
-                                  timeout=self.timeout)
-            if resp.status_code != 200:
-                raise RuntimeError(f"The Colour Spinner returned {resp.status_code}. Check your internet "
-                                   "connection, or set Backend to 'Copied from the browser'.")
+            resp, used = self._post_colour(hex_, language, target)
             res = parse_color_picker(resp.text)
+            if used != hex_.upper():
+                res["looked_up_as"] = used
+                if hex_.upper() not in _NEARBY_SHOWN:
+                    _NEARBY_SHOWN.add(hex_.upper())
+                    show(f'<div class="note">The Colour Spinner had a server error for {hex_.upper()}, so it was looked up as '
+                         f'the indistinguishable {used} (ΔE₀₀ {de00(hex_, used):.1f}).</div>')
             # The Namer gives a Latin spelling only for some languages. When the Translator is set to
             # the same language it names the same word, so its Latin spelling can stand in.
             if (not res.get("romanized") or norm(res["romanized"]) == norm(res["name"])) and target == language \
@@ -642,7 +674,7 @@ def show_palette(hexes, labels=None, captions=None, note=None):
     show(f'<div class="surround">{tiles}</div>' + (f'<div class="note">{note}</div>' if note else ""))
 
 @needs_simulations()
-def show_conditions(hexes, labels=None, conditions=CONDITIONS, width=40, note=True):
+def show_conditions(hexes, labels=None, conditions=CONDITIONS, width=40, note=False):   # references: credits cell
     """One row per vision condition, so you can scan down a column for change."""
     labels = labels or [""] * len(hexes)
     w = f"width:{width}px"
@@ -658,10 +690,10 @@ def show_conditions(hexes, labels=None, conditions=CONDITIONS, width=40, note=Tr
          (f'<div class="note">{simulation_source_note()}</div>'
           if note else ""))
 
-def show_babel(table, languages, labels=None):
+def show_babel(table, languages, labels=None, first=""):
     """table: rows with sdg, hex, and per-language '<lang>' name and '<lang>|conf' columns."""
     labels = labels or {}
-    head = "<tr><th></th>" + "".join(f"<th>{labels.get(l, _h(l))}</th>" for l in languages) + "</tr>"
+    head = f"<tr><th>{first}</th>" + "".join(f"<th>{labels.get(l, _h(l))}</th>" for l in languages) + "</tr>"
     body = ""
     for _, r in table.iterrows():
         cells = ""
@@ -671,17 +703,20 @@ def show_babel(table, languages, labels=None):
                 w = 0 if pd.isna(c) else int(round(100 * c))
                 extra = (f' <span style="color:{MUTED};font-size:11px">{_h(rom)}</span>'
                          if isinstance(rom, str) and rom and norm(rom) != norm(n) else "")
-                cells += (f'<td><b>{_h(n)}</b>{extra}<div class="bar"><i style="width:{w}%"></i></div>'
+                light = ";background:#BDBDB8" if w < LOW_CONFIDENCE * 100 else ""      # contested names stand out
+                cells += (f'<td><b>{_h(n)}</b>{extra}<div class="bar"><i style="width:{w}%{light}"></i></div>'
                           f'<span style="color:{MUTED};font-size:11px">{w}% confidence</span></td>')
             else:
                 cells += f'<td style="color:{MUTED}">—</td>'
         body += (f'<tr><td><div class="pair" style="width:96px"><div style="background:{r.hex};'
                  f'color:{_ink_on(r.hex)};font-weight:700;font-size:15px">{r.name}</div></div></td>{cells}</tr>')
-    show(f'<table class="babel">{head}{body}</table>')
+    show(f'<table class="babel">{head}{body}</table>'
+         f'<div class="note">Lighter bars: below {LOW_CONFIDENCE:.0%} confidence, where speakers often use other names too.</div>')
 
 _GOOD, _MID, _BAD = ("#DDEFE3", "#14532D"), ("#FBF0D0", "#6B4E00"), ("#F9DADA", "#7F1D1D")
 DELTA_E_THRESHOLD = 10      # ΔE₀₀: the one threshold used throughout the masterclass
 HARD_TO_NAME = 0.5          # naming confidence below this counts as hard to name
+LOW_CONFIDENCE = 0.3        # in the names table, bars below this are drawn lighter
 
 def sim_phrase(condition):
     """'Deuteranopia' -> 'deuteranopia-simulated colours'; 'Age 80' -> 'colours simulated for age 80'."""

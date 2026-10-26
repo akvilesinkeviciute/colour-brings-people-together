@@ -17,7 +17,7 @@ The Colour Spinner has no separate API. The notebooks make the same requests as 
 All of this lives in `SPINNER_API` and `ApiSpinner` in `colour_masterclass.py`. If the site changes, only those need updating.
 
 **Two assumptions to check:**
-- Languages are numbered in the order of the Spinner's language menu: 1 American English, 2 British English, 3 French, 4 Greek, 5 OtjiHimba ("Himba" in the menu), 6 Spanish. The saved reply confirms 4 is Greek.
+- Languages are numbered in the order of the Spinner's language menu: 1 American English, 2 British English, 3 French, 4 Greek, 5 OtjiHimba ("Himba" in the menu), 6 Serbian, 7 Spanish (checked in the menu on 26 October 2026; the numbers follow the menu's alphabetical order, so they can shift when a language is added). The saved reply confirms 4 is Greek.
 - These are the website's internal requests, not a published API. Confirm with the Colour Spinner team that 10–25 people using them at once is fine, and run both notebooks on the venue network beforehand.
 
 ### 2. Hosting
@@ -26,7 +26,7 @@ Everything lives in the public repository [akvilesinkeviciute/colour-brings-peop
 
 - The notebooks load `colour_masterclass.py` from the **`v1.0` release**, so the links work only once that release exists (Releases ▸ Create a new release ▸ tag `v1.0`).
 - The "Open in Colab" buttons in `README.md` also point at `v1.0`, so everyone gets the same version.
-- To fix something later, edit the files, publish a `v1.1` release, and change `v1.0` to `v1.1` in `ToolkitURL` (first cell of each notebook; `TOOLKIT_URL` in `source/nbtools.py` before rebuilding) and in the README buttons. Copies people already saved keep working on `v1.0`.
+- To fix something later, edit the files, publish a `v1.1` release, and change `v1.0` to `v1.1` in `TOOLKIT_URL` (first cell of each notebook) and in the README buttons. Copies people already saved keep working on `v1.0`.
 
 If GitHub can't be reached, participants can upload `colour_masterclass.py` in Colab's Files panel (folder icon, left) and rerun the first cell, which skips the download when the file is already there.
 
@@ -40,7 +40,7 @@ Run both notebooks on the venue network if you can. In Part B, the *Ask the Colo
 
 | Problem | What participants do |
 |---|---|
-| Spinner API unreachable | Set `Backend` to *Copied from the browser*. A row of boxes appears for each test colour and language; participants copy the Namer's name and confidence and the Mapper's best-example RGB from the Spinner in the browser. |
+| Spinner API unreachable | `Backend` is no longer a form field. Ask participants to click **Show code** in Part B's *Your choices* cell and in Part C's *Load your names* cell, and change `Backend = "Colour Spinner API"` to `Backend = "Copied from the browser"`. The cell in Part B section 5 then first shows a row of boxes per test colour and language to fill in from the Spinner in the browser, and runs when run again. |
 | Spinner simulations unreachable | Sections 3 and 5 of Part B and the re-check in Part C show a message. Once the connection is back, run `retry_simulations()` and rerun those cells. Meanwhile, use the Spinner's "Simulate age/CVD" menu in the browser. |
 | Lost `partB_results.csv` | In Part C, choose *Type them in*: participants pick a language and type each colour name into the boxes. |
 | No Google account | Do the whole audit in the Spinner's browser interface. The notebooks are optional enrichment, as stated in the proposal. |
@@ -73,20 +73,18 @@ If the Spinner's simulations can't be reached, the perceptual cells show a messa
 
 **Colour identity scorecard.** Part B section 6 plots each test colour's naming confidence against its nearest-colour ΔE₀₀ on fixed axes (0–100% and ΔE₀₀ 0–40), with the thresholds ΔE₀₀ 10 and 50%. Values above 40 sit at the top edge, marked with their value; test colours that land on the same spot (for example, two colours that are each other's nearest neighbour) are set side by side.
 
-**Palette previews and export.** Part C shows each language's grounded palette in the style of the palette explorer (swatches, bar, donut, line and scatter charts, and a map of the US states, with the explorer's example data), with typical vision and one chosen condition side by side, and saves each preview as a PNG. The download has a palette card (PNG), swatch files for Adobe apps (`.ase`), GIMP, Inkscape and Krita (`.gpl`) and Figma or design systems (`.tokens.json`), CSS custom properties, and the CSV and JSON data.
+**Spinner server errors.** The Colour Spinner's server occasionally returns an error (HTTP 500) for particular colour values, as happened for SDG 9 and 17 on 26 October 2026. The toolkit retries once, then looks up the nearest neighbouring colour (±1–2 in one channel, ΔE₀₀ well below 1) and says so in the output. If even the neighbours fail, the message says the problem is on the Spinner's side; worth reporting to the Spinner team with the hex codes.
+
+**Corrected SDG palette.** Part C section 6 shows the UN's 17 colours next to the same palette with the test colours replaced by their grounded colours for one audience language, under a chosen kind of vision. It flags problems the correction creates: test colours that now share a name and merge, or a corrected colour that has moved close to an untested SDG colour. It needs names from Part B, so it says so when names were typed in by hand.
+
+**Palette previews and export.** Part C shows each language's grounded palette in the style of the palette explorer (swatches, bar, donut, line and scatter charts, or a world map, falling back to the US states map if the world map can't be downloaded), with typical vision and one chosen condition side by side. The download, `grounded_palette.zip`, keeps to four things: a picture of the grounded palettes, a picture of the corrected SDG palette for every audience language, the previews made in section 5, and a CSV of every colour's hex code with the evidence for any change. Swatch files for design tools (Adobe, GIMP, Figma tokens, CSS) are no longer included; the hex codes in the CSV paste into any tool.
 
 **The story.** Participants choose a test palette, *their* language (as the designer) and *their audience's* languages once, in Part B section 3, after seeing the whole palette under each condition in section 2. Everything follows from that: distinctness is measured within the test palette (the full 17-colour grid is only context), translatability compares the audience's focal colours with the designer's, and Part C builds one grounded palette per language.
 
-**SDG poster.** Part B opens with the UN's official SDG poster (`images/sdg_poster.png`), from the UN's communications materials, with the link and the statement the UN's guidelines require. The UN also asks for permission when SDG branding appears on materials for events with registration fees (sdgpermissions@un.org); confirm this applies, or has been granted, before the session.
+**SDG wheel.** Part B opens with the UN's SDG wheel (`images/sdg_wheel.png`), from the UN's communications materials; the link and the statement the UN's guidelines require are in the credits cell at the end of Part B. The UN also asks for permission when SDG branding appears on materials for events with registration fees (sdgpermissions@un.org); confirm this applies, or has been granted, before the session.
 
 **Name matching.** Names are compared ignoring case, accents, punctuation and Greek final sigma, so Κόκκινο matches κοκκινο. They are also compared across scripts. The Spinner gives a Latin spelling for each name (e.g. *kokkino*), and an AI answer counts as the same name if it gives the native word, that spelling, or both, as in "κόκκινο (kokkino)". Synonyms such as *Sky blue* and *Light blue* still count as different names, which is the point of the comparison.
 
 ## Reproducing or editing the notebooks
 
-The notebooks are generated from the Python scripts in `source/`:
-
-- `toolkit.py` and `helpers.py`: the two halves of `colour_masterclass.py` (colour maths and connections; charts and tables)
-- `nb_part_b.py` and `nb_part_c.py`: the cells of each notebook
-- `nbtools.py` and `build_all.py`: build helpers
-
-To rebuild the notebooks and `colour_masterclass.py`, run `python build_all.py` inside `source/`, then move the files it writes up to the top level of the repository. You can also edit `colour_masterclass.py` and the notebooks directly.
+The notebooks are edited directly: in Colab, then saved to GitHub with *File ▸ Save a copy in GitHub*. Only the toolkit is generated: `source/toolkit.py` and `source/helpers.py` are combined into `colour_masterclass.py` by running `python build_toolkit.py` inside `source/`.

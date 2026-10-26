@@ -33,7 +33,7 @@ def make_module(path):
 
 def loader_cell():
     return code(f"""#@title Run me first: load the masterclass toolkit
-#@markdown The colour maths, the Colour Spinner connection and the charts live in `colour_masterclass.py`, published next to these notebooks.
+#@markdown Takes about 30 seconds the first time. You're ready when it says **Toolkit ready ✓**.
 ToolkitURL = "{TOOLKIT_URL}"  #@param {{type:"string"}}
 import os, importlib, urllib.request
 try:                                   # always fetch the current version
