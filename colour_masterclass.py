@@ -212,7 +212,7 @@ class ApiSpinner:
         self.http.headers.update({"HX-Request": "true",
                                   "User-Agent": "colour-masterclass-notebook (BCS HCI 2026)"})
         self.cfg, self.timeout = cfg, timeout
-        self._pages, self._best, self._ids = {}, {}, {}
+        self._pages, self._best, self._ids, self._lang_ids = {}, {}, {}, {}
 
     def _lang(self, language):
         try:
@@ -310,36 +310,53 @@ class ApiSpinner:
         res = self.lookup(best, language)
         return res.get("members", []) if same_name(res["name"], name) else []
 
+    def _language_ids(self, language):
+        """This language's own name list, {name: ID}, as the page loads it when the language menu changes
+        (GET /colour). IDs are per language: British English Blue is 50, American English Blue is 5."""
+        if language not in self._lang_ids:
+            ids = {}
+            try:
+                resp = self.http.get(self.cfg["base_url"] + "/colour", params={"language-select": self._lang(language)},
+                                     timeout=self.timeout)
+                if resp.status_code == 200:
+                    for v, n in re.findall(r'<option value="(\d+)"[^>]*>(.*?)</option>', resp.text, re.S):
+                        ids[norm(_strip(n))] = int(v)
+            except Exception:
+                ids = {}
+            self._lang_ids[language] = ids
+        return self._lang_ids[language]
+
     def best_example(self, name, language):
         key = (language, norm(name))
         if key in self._best:               # already seen as the top name of a colour
             return self._best[key]
-        if language not in self._ids:       # learn this language's name list
-            self.lookup("#808080", language)
-        cid = self._ids[language].get(norm(name))
+        cid = self._language_ids(language).get(norm(name))
+        if cid is None:                     # older way of learning the names, if the name list can't be fetched
+            if language not in self._ids:
+                self.lookup("#808080", language)
+            cid = self._ids[language].get(norm(name))
         if cid is None:
             raise KeyError(f"'{name}' is not one of the Colour Spinner's {language} names.")
         hexes = []
-        # First the Picker request asked for that name: its reply has the Mapper's best example in a known place
-        # (the RGB under "Best example of … (top left)"), the same value the Mapper shows.
-        form = {"language-select": self._lang(language), "translation-select": self._lang(language),
-                "age-cvd-simulation-select": "none", "synonyms": "on", "antonyms": "on",
-                "r": 128, "g": 128, "b": 128, "exact_colour_id": cid}
-        try:
-            resp = self.http.post(self.cfg["base_url"] + self.cfg["color_picker"], data=form, timeout=self.timeout)
-            if resp.status_code == 200:
-                res = parse_color_picker(resp.text)
-                if res.get("best_example") and same_name(res.get("name", ""), name):
-                    hexes = [res["best_example"]]
+        try:                                # the page's own request for a name: its first swatch is the best example
+            resp = self.http.get(self.cfg["base_url"] + self.cfg["mobile_panels"],
+                                 params={"language_id": self._lang(language), "colour_id": cid}, timeout=self.timeout)
+            resp.raise_for_status()
+            sw = resp.json().get("swatches") or []
+            if sw and all(k in sw[0] for k in "rgb"):
+                hexes = [rgb_to_hex([int(sw[0]["r"]), int(sw[0]["g"]), int(sw[0]["b"])])]
         except Exception:
             hexes = []
-        if not hexes:                       # otherwise the panel request the page makes for a typed-in name
+        if not hexes:                       # otherwise the Picker request, asked for that name directly
+            form = {"language-select": self._lang(language), "translation-select": self._lang(language),
+                    "age-cvd-simulation-select": "none", "synonyms": "on", "antonyms": "on",
+                    "r": 128, "g": 128, "b": 128, "exact_colour_id": cid}
             try:
-                resp = self.http.get(self.cfg["base_url"] + self.cfg["mobile_panels"],
-                                     params={"language_id": self._lang(language), "colour_id": cid},
-                                     timeout=self.timeout)
-                resp.raise_for_status()
-                hexes = find_colours(resp.json())
+                resp = self.http.post(self.cfg["base_url"] + self.cfg["color_picker"], data=form, timeout=self.timeout)
+                if resp.status_code == 200:
+                    res = parse_color_picker(resp.text)
+                    if res.get("best_example") and same_name(res.get("name", ""), name):
+                        hexes = [res["best_example"]]
             except Exception:
                 hexes = []
         if not hexes:
@@ -738,7 +755,7 @@ def show_babel(table, languages, labels=None, first=""):
          f'<div class="note">Lighter bars: below {LOW_CONFIDENCE:.0%} confidence, where speakers often use other names too.</div>')
 
 _GOOD, _MID, _BAD = ("#DDEFE3", "#14532D"), ("#FBF0D0", "#6B4E00"), ("#F9DADA", "#7F1D1D")
-DELTA_E_THRESHOLD = 10      # ΔE₀₀: the one threshold used throughout the masterclass
+DELTA_E_THRESHOLD = 5       # ΔE₀₀: the one threshold used throughout the masterclass
 HARD_TO_NAME = 0.5          # naming confidence below this counts as hard to name
 LOW_CONFIDENCE = 0.5        # in the names table, bars below this are drawn lighter
 
@@ -759,7 +776,7 @@ def de_badge(d, threshold, small_is_good=True, prefix=""):
     return f'<span class="badge" style="background:{bg};color:{fg}">{prefix}{d:.1f}</span>'
 
 def show_pairs(df, left="ai_hex", right="spinner_hex", lab_left="AI", lab_right="Speakers",
-               threshold=10, extra_cols=()):
+               threshold=DELTA_E_THRESHOLD, extra_cols=()):
     """For each name: the AI's colour, the speakers' best example, and the ΔE₀₀ between them as a bar."""
     top = max(2 * threshold, float(np.nanmax(df["de00"])) if df["de00"].notna().any() else 1)
     rows, last = [], None
@@ -1814,7 +1831,7 @@ def _variants(cmp):
     return [(not ag) and spelling_variant(ai, n, rom) for ai, n, rom, ag in
             zip(cmp.ai_name, cmp["name"], cmp.get("romanized", pd.Series(None, index=cmp.index)), cmp.agrees)]
 
-def show_name_comparison(cmp, threshold=10, you=None):
+def show_name_comparison(cmp, threshold=DELTA_E_THRESHOLD, you=None):
     """One row per test colour, one column per language: the speakers' name, the AI's name, and
     for names that differ, where the AI's name points."""
     langs = list(dict.fromkeys(cmp.language))
@@ -3142,7 +3159,7 @@ def spinner_link():
     show(f'<a href="https://colornaming.net/spinner" target="_blank" rel="noopener" style="display:inline-block">'
          f'<img src="https://raw.githubusercontent.com/akvilesinkeviciute/colour-brings-people-together/v1.0/images/colour_spinner_logo.png" '
          f'alt="Open the Colour Spinner" width="240"></a><div style="font-size:12px;color:{MUTED};margin-top:2px">'
-         f'Click to open the Colour Spinner in a new tab.</div>')
+         f'Click to open the Colour Spinner in a new tab. It opens in American English: choose your language in its menu first.</div>')
 
 
 # ── Menus that list only what the pair chose, and redraw straight away ─────
@@ -3180,5 +3197,5 @@ def open_part_c():
          f'background:{INK};color:#FFFFFF;font-weight:700;font-size:13px;text-decoration:none;margin-top:6px">Open Part C ↗</a>'
          f'<div style="font-size:12px;color:{MUTED};margin-top:6px">Part C opens in a new tab; upload <code>partB_results.csv</code> there.</div>')
 
-TOOLKIT_VERSION = "2026-10-26 22:24"
+TOOLKIT_VERSION = "2026-10-26 23:01"
 print(f"Toolkit ready ✓  version {TOOLKIT_VERSION}  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))

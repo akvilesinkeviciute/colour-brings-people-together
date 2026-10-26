@@ -966,7 +966,7 @@ def _variants(cmp):
     return [(not ag) and spelling_variant(ai, n, rom) for ai, n, rom, ag in
             zip(cmp.ai_name, cmp["name"], cmp.get("romanized", pd.Series(None, index=cmp.index)), cmp.agrees)]
 
-def show_name_comparison(cmp, threshold=10, you=None):
+def show_name_comparison(cmp, threshold=DELTA_E_THRESHOLD, you=None):
     """One row per test colour, one column per language: the speakers' name, the AI's name, and
     for names that differ, where the AI's name points."""
     langs = list(dict.fromkeys(cmp.language))
@@ -2294,7 +2294,7 @@ def spinner_link():
     show(f'<a href="https://colornaming.net/spinner" target="_blank" rel="noopener" style="display:inline-block">'
          f'<img src="https://raw.githubusercontent.com/akvilesinkeviciute/colour-brings-people-together/v1.0/images/colour_spinner_logo.png" '
          f'alt="Open the Colour Spinner" width="240"></a><div style="font-size:12px;color:{MUTED};margin-top:2px">'
-         f'Click to open the Colour Spinner in a new tab.</div>')
+         f'Click to open the Colour Spinner in a new tab. It opens in American English: choose your language in its menu first.</div>')
 
 
 # ── Menus that list only what the pair chose, and redraw straight away ─────
