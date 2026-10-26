@@ -75,7 +75,7 @@ def _available_language(pal, wanted, what):
         return wanted
     role = dict(zip(pal.language, pal.get("role", pd.Series("", index=pal.index))))
     pick = next((l for l in have if role.get(l) == "audience"), have[0])
-    show(small(f"{_h(wanted)} isn't among your languages, so this shows {_h(pick)}. Change {what} to choose another."))
+    show(small(f"{_h(wanted)} isn't among your languages, so this shows {_h(pick)}."))
     return pick
 
 
@@ -1132,7 +1132,8 @@ def show_comparison(pal, threshold):
         d = de_badge(r.de00, threshold, prefix="ΔE₀₀ ") if not pd.isna(r.get("de00", np.nan)) else small("n/a")
         if isinstance(r.get("rt_name"), str):
             ok = same_name(r.rt_name, r["name"], r.get("romanized"))
-            rt = (f'{small("Speakers call it")} <b>{_h(r.rt_name)}</b> {small(f"{r.rt_conf:.0%}")}<br>'
+            rt = (f'<div style="font-size:11.5px;color:{MUTED};white-space:nowrap">The AI\'s colour is called</div>'
+                  f'<div style="white-space:nowrap"><b>{_h(r.rt_name)}</b> {small(f"{r.rt_conf:.0%}")}</div>'
                   + (pill("same name", "good") if ok else pill("different name", "bad")))
         else:
             rt = small("not looked up")
@@ -1156,7 +1157,7 @@ def show_comparison(pal, threshold):
         table(["Language", "Name"], rows, valign="top")
     show(f'<div class="note">Each cell: the AI\'s colour next to the speakers\' best example, and the ΔE₀₀ between them '
          f'(green below {threshold / 2:g}, amber up to {threshold:g}, red above). Then the round trip: what speakers would call '
-         f'the AI\'s colour; a different name means the AI\'s colour says something else.</div>')
+         f'<b>the AI\'s colour</b> (the left swatch); a different name means the AI\'s colour says something else.</div>')
 
 def show_round_trip(pal):
     rows, last = [], None
@@ -2006,7 +2007,7 @@ def corrected_sdg_card(pal, languages, path):
     W, Hrow = 17 * 0.62 + 0.3, 1.05
     fig, ax = plt.subplots(figsize=(W, Hrow * len(rows) + 0.7)); ax.axis("off")
     ax.set_xlim(0, W); ax.set_ylim(Hrow * len(rows) + 0.5, -0.5)
-    ax.text(0.15, -0.25, "The SDG palette, corrected for each audience", fontsize=13, fontweight="bold", color=INK)
+    ax.text(0.15, -0.25, "Your corrected test colours in the full SDG palette", fontsize=13, fontweight="bold", color=INK)
     for k, (label, colours, marked) in enumerate(rows):
         y = k * Hrow + 0.25
         ax.text(0.15, y, label, fontsize=9.5, color=MUTED, va="center")
@@ -2018,8 +2019,9 @@ def corrected_sdg_card(pal, languages, path):
             ax.text(x + 0.08, y + 0.56, str(i), fontsize=7.5, fontweight="bold", color=_ink_on(h), va="bottom")
             if i in marked:
                 ax.add_patch(mpl.patches.Rectangle((x, y + 0.7), 0.54, 0.05, fc=INK, ec="none"))
-    ax.text(0.15, Hrow * len(rows) + 0.35, "Marked: changed from the UN colour. A demonstration of evidence-based "
-            "adjustment, not a proposal to change the UN's colours.", fontsize=8, color=MUTED)
+    ax.text(0.15, Hrow * len(rows) + 0.35, "Marked: changed from the UN colour. Only the test colours were corrected; the "
+            "others are the UN's. A demonstration of evidence-based adjustment, not a proposal to change the UN's colours.",
+            fontsize=8, color=MUTED)
     fig.savefig(path, dpi=200, bbox_inches="tight", facecolor="white"); plt.close(fig)
     return True
 
@@ -2034,7 +2036,7 @@ def export_palette(pal, languages, stem="grounded_palette"):
     files.append(f"{stem}_card.png"); rows.append([f"<code>{stem}_card.png</code>", "Your grounded palette for each language, as a picture"])
     if corrected_sdg_card(pal, languages, "corrected_sdg_palette.png"):
         files.append("corrected_sdg_palette.png")
-        rows.append(["<code>corrected_sdg_palette.png</code>", "The UN's 17 colours, corrected for each audience"])
+        rows.append(["<code>corrected_sdg_palette.png</code>", "The full SDG palette with your test colours corrected for each audience"])
     previews = sorted(glob.glob("preview_*.png"))
     if previews:
         files += previews; rows.append(["<code>preview_….png</code>", "The designs you previewed in section 5"])
@@ -2154,7 +2156,8 @@ color:#FFFFFF;font-weight:700;font-size:13px;text-decoration:none">Open the ques
 @needs_simulations()
 def show_corrected_sdg(pal, language, vision="Typical", threshold=DELTA_E_THRESHOLD):
     """The UN's 17 colours next to the same palette with the test colours replaced by their grounded colours
-    for one language, under a chosen kind of vision, with any new problems flagged."""
+    for one language, under a chosen kind of vision. Arcs under the corrected row point to the pairs that the
+    correction brought too close, so they can be checked again."""
     if "sdg" not in pal or pal.sdg.isna().all():
         show("This step needs the names from Part B (uploaded <code>partB_results.csv</code>), because it has to know "
              "which SDG colour each name belongs to.")
@@ -2174,44 +2177,108 @@ def show_corrected_sdg(pal, language, vision="Typical", threshold=DELTA_E_THRESH
             corrected[int(r.sdg)] = h; named[int(r.sdg)] = r["name"]
     changed = sorted(i for i in named if de00(original[i], corrected[i]) >= 0.5)
     prefetch_simulations(list(original.values()) + list(corrected.values()))
-    def row(colours, label, mark=()):
-        tiles = ""
-        for i, h in colours.items():
-            v = simulate(h, vision)
-            dot = (f'<div style="height:4px;margin-top:3px;border-radius:2px;background:{INK}"></div>' if i in mark
-                   else '<div style="height:4px;margin-top:3px"></div>')
-            tiles += (f'<div style="display:inline-block;margin:0 3px 0 0;vertical-align:top;text-align:center">'
-                      f'{framed(v, str(i), 40, 36, 10.5)}{dot}</div>')
-        return f'<div style="margin:6px 0 10px"><div style="font-size:12px;color:{MUTED};margin-bottom:4px">{label}</div>{tiles}</div>'
-    view = "typical colour vision" if vision == "Typical" else condition_label(vision, " ").lower()
-    html = row(original, "The UN's original palette") + row(corrected, f"Corrected for {_h(language)} (marked: changed from the UN colour)", changed)
-    show(f"<b>The SDG palette, with your test colours corrected for {_h(language)}</b> {small('as seen with ' + _h(view))}" + html)
-    # what the correction changed for the whole palette
-    notes = []
+    sim = lambda h: simulate(h, vision)
+    # what the correction changed for the whole palette: pairs to check again
+    arcs, notes = [], []
     tests = sorted(named)
-    for a in range(len(tests)):
-        for b in range(a + 1, len(tests)):
-            i, j = tests[a], tests[b]
-            d = de00(simulate(corrected[i], vision), simulate(corrected[j], vision))
-            if d < threshold and de00(simulate(original[i], vision), simulate(original[j], vision)) >= threshold:
+    for a_ in range(len(tests)):
+        for b_ in range(a_ + 1, len(tests)):
+            i, j = tests[a_], tests[b_]
+            d = de00(sim(corrected[i]), sim(corrected[j]))
+            if d < threshold and de00(sim(original[i]), sim(original[j])) >= threshold:
                 why = (f"both are now <i>{_h(named[i])}</i>" if norm(named[i]) == norm(named[j]) else "they are now close")
                 notes.append(f"<b>{i} and {j}</b>: {why}, ΔE₀₀ {d:.1f} apart, though the originals were distinct.")
-    near = {}                                          # test colours sharing a colour and a neighbour: one line
+                arcs.append((i, j, d, False))
+    near = {}
     for i in tests:
         for j, h in original.items():
             if j in named: continue
-            d = de00(simulate(corrected[i], vision), simulate(h, vision))
-            if d < threshold and de00(simulate(original[i], vision), simulate(h, vision)) >= threshold:   # new, not inherited
+            d = de00(sim(corrected[i]), sim(h))
+            if d < threshold and de00(sim(original[i]), sim(h)) >= threshold:      # new, not inherited
                 near.setdefault((corrected[i], j), []).append((i, d))
+                arcs.append((i, j, d, True))
     for (hex_, j), hits in near.items():
         ids = " and ".join(str(i) for i, _ in hits)
         verb = "is" if len(hits) == 1 else "are"
         notes.append(f"<b>{ids}</b> (<i>{_h(named[hits[0][0]])}</i>) {verb} now ΔE₀₀ {hits[0][1]:.1f} from the unchanged SDG colour <b>{j}</b>.")
+    TILE, GAP = 50, 3                                   # framed tile width (40 + frame) and the gap between tiles
+    def row(colours, label, mark=()):
+        tiles = ""
+        for i, h in colours.items():
+            dot = (f'<div style="height:4px;margin-top:3px;border-radius:2px;background:{INK}"></div>' if i in mark
+                   else '<div style="height:4px;margin-top:3px"></div>')
+            tiles += (f'<div style="display:inline-block;margin:0 {GAP}px 0 0;vertical-align:top;text-align:center">'
+                      f'{framed(sim(h), str(i), 40, 36, 10.5)}{dot}</div>')
+        return f'<div style="margin:6px 0 4px"><div style="font-size:12px;color:{MUTED};margin-bottom:4px">{label}</div><div style="white-space:nowrap">{tiles}</div></div>'
+    def arcs_svg():
+        if not arcs: return ""
+        x = lambda i: (i - 1) * (TILE + GAP) + TILE / 2
+        parts = []
+        for k, (i, j, d, arrow) in enumerate(sorted(arcs, key=lambda t: abs(t[0] - t[1]))):
+            x1, x2 = x(i), x(j)
+            depth = 16 + 12 * k                         # each arc a little deeper, so none overlap
+            mid = (x1 + x2) / 2
+            parts.append(f'<path d="M{x1:.0f},2 Q{mid:.0f},{depth * 2:.0f} {x2:.0f},2" fill="none" stroke="#B4342D" stroke-width="1.6"'
+                         f'{" marker-end=\"url(#ah)\"" if arrow else ""}/>')
+        H = 16 + 12 * len(arcs) + 6
+        width = 17 * (TILE + GAP)
+        return (f'<svg width="{width}" height="{H}" style="display:block;margin:0 0 6px">'
+                f'<defs><marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">'
+                f'<path d="M0,0 L8,4 L0,8 z" fill="#B4342D"/></marker></defs>{"".join(parts)}</svg>')
+    view = "typical colour vision" if vision == "Typical" else condition_label(vision, " ").lower()
+    html = (row(original, "The UN's original palette")
+            + row(corrected, f"Your test colours corrected for {_h(language)} (marked: changed from the UN colour; the others are unchanged)", changed)
+            + arcs_svg())
+    show(f"<b>Your test colours, corrected for {_h(language)}, in the full SDG palette</b> {small('as seen with ' + _h(view))}" + html)
     if notes:
-        show("<b>What the correction changed for the whole palette</b>"
+        show("<b>Check these again</b>" + small(" (the red arcs above join them: an arrow points from a corrected colour to the unchanged colour it is now close to)")
              + "".join(f'<div style="font-size:13px;margin:3px 0">{n}</div>' for n in notes) +
              f'<div class="note">Grounding fixes what each name means; it can also merge colours that share a name, or '
              f'move a colour close to one you didn\'t test.</div>')
     else:
         show(f"<b>No new problems.</b> " + small(f"The correction brings no two colours closer than ΔE₀₀ {threshold:g} "
                                                 f"that were distinct before, as seen with {_h(view)}."))
+
+def spinner_link():
+    """The Colour Spinner logo as a link, in a cell's output: links there open directly, without the
+    'redirect notice' page that links in Colab's text cells can show."""
+    show(f'<a href="https://colornaming.net/spinner" target="_blank" rel="noopener" style="display:inline-block">'
+         f'<img src="https://raw.githubusercontent.com/akvilesinkeviciute/colour-brings-people-together/v1.0/images/colour_spinner_logo.png" '
+         f'alt="Open the Colour Spinner" width="240"></a><div style="font-size:12px;color:{MUTED};margin-top:2px">'
+         f'Click to open the Colour Spinner in a new tab.</div>')
+
+
+# ── Menus that list only what the pair chose, and redraw straight away ─────
+VISIONS = ["Typical", "Protanopia", "Deuteranopia", "Tritanopia", "Age 40", "Age 60", "Age 80"]
+
+def live_controls(controls, render):
+    """Dropdown menus built when the cell runs (so they list only the pair's own languages), with the output
+    redrawn whenever a choice changes. controls: {key: (label, options, default)}; render(**choices)."""
+    try:
+        import ipywidgets as w
+    except ImportError:
+        render(**{k: d for k, (_, _, d) in controls.items()}); return
+    menus = {k: w.Dropdown(options=list(opts), value=d if d in opts else list(opts)[0], description=label,
+                           style={"description_width": "initial"}, layout=w.Layout(width="auto", margin="0 18px 0 0"))
+             for k, (label, opts, d) in controls.items()}
+    out = w.Output()
+    def draw(*_):
+        out.clear_output(wait=True)
+        with out:
+            render(**{k: m.value for k, m in menus.items()})
+    for m in menus.values():
+        m.observe(draw, names="value")
+    try:
+        display(w.HBox(list(menus.values())), out)
+    except Exception:
+        pass
+    draw()
+
+PART_C_URL = ("https://colab.research.google.com/github/akvilesinkeviciute/colour-brings-people-together/"
+              "blob/v1.0/Part_C_Ground_an_AI_palette.ipynb")
+
+def open_part_c():
+    """A button that opens Part C in a new tab (in a cell's output, so it opens directly)."""
+    show(f'<a href="{PART_C_URL}" target="_blank" rel="noopener" style="display:inline-block;padding:8px 16px;border-radius:6px;'
+         f'background:{INK};color:#FFFFFF;font-weight:700;font-size:13px;text-decoration:none;margin-top:6px">Open Part C ↗</a>'
+         f'<div style="font-size:12px;color:{MUTED};margin-top:6px">Part C opens in a new tab; upload <code>partB_results.csv</code> there.</div>')
