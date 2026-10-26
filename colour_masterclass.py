@@ -319,11 +319,29 @@ class ApiSpinner:
         cid = self._ids[language].get(norm(name))
         if cid is None:
             raise KeyError(f"'{name}' is not one of the Colour Spinner's {language} names.")
-        resp = self.http.get(self.cfg["base_url"] + self.cfg["mobile_panels"],
-                             params={"language_id": self._lang(language), "colour_id": cid},
-                             timeout=self.timeout)
-        resp.raise_for_status()
-        hexes = find_colours(resp.json())
+        hexes = []
+        # First the Picker request asked for that name: its reply has the Mapper's best example in a known place
+        # (the RGB under "Best example of … (top left)"), the same value the Mapper shows.
+        form = {"language-select": self._lang(language), "translation-select": self._lang(language),
+                "age-cvd-simulation-select": "none", "synonyms": "on", "antonyms": "on",
+                "r": 128, "g": 128, "b": 128, "exact_colour_id": cid}
+        try:
+            resp = self.http.post(self.cfg["base_url"] + self.cfg["color_picker"], data=form, timeout=self.timeout)
+            if resp.status_code == 200:
+                res = parse_color_picker(resp.text)
+                if res.get("best_example") and same_name(res.get("name", ""), name):
+                    hexes = [res["best_example"]]
+        except Exception:
+            hexes = []
+        if not hexes:                       # otherwise the panel request the page makes for a typed-in name
+            try:
+                resp = self.http.get(self.cfg["base_url"] + self.cfg["mobile_panels"],
+                                     params={"language_id": self._lang(language), "colour_id": cid},
+                                     timeout=self.timeout)
+                resp.raise_for_status()
+                hexes = find_colours(resp.json())
+            except Exception:
+                hexes = []
         if not hexes:
             raise RuntimeError(f"Could not find a best example for '{name}' in the Spinner's reply.")
         self._best[key] = hexes[0]
@@ -722,7 +740,7 @@ def show_babel(table, languages, labels=None, first=""):
 _GOOD, _MID, _BAD = ("#DDEFE3", "#14532D"), ("#FBF0D0", "#6B4E00"), ("#F9DADA", "#7F1D1D")
 DELTA_E_THRESHOLD = 10      # ΔE₀₀: the one threshold used throughout the masterclass
 HARD_TO_NAME = 0.5          # naming confidence below this counts as hard to name
-LOW_CONFIDENCE = 0.3        # in the names table, bars below this are drawn lighter
+LOW_CONFIDENCE = 0.5        # in the names table, bars below this are drawn lighter
 
 def sim_phrase(condition):
     """'Deuteranopia' -> 'deuteranopia-simulated colours'; 'Age 80' -> 'colours simulated for age 80'."""
@@ -1337,7 +1355,7 @@ def _panel_grid(groups, title, subtitle, legend_entries):
     import math, textwrap
     half = min(MAP_HALF_WINDOW, max(np.abs(np.asarray(pts, float) - np.asarray(c, float)).max() for _, c, pts in groups) + 7)
     n = len(groups); ncols = 2 if n > 1 else 1; nrows = math.ceil(n / ncols)
-    fig, axes = plt.subplots(nrows, ncols, figsize=(5.2 * ncols, 4.6 * nrows + 1.5 + 0.3 * (len(legend_entries) > 5)), squeeze=False)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5.2 * ncols, 4.6 * nrows + 1.6 + 0.3 * (len(legend_entries) > 5)), squeeze=False)
     for ax in axes.flat[n:]: ax.axis("off")
     for ax, (t, c, _) in zip(axes.flat, groups):
         for sp in ("top", "right"): ax.spines[sp].set_visible(False)
@@ -1356,8 +1374,9 @@ def _panel_grid(groups, title, subtitle, legend_entries):
     fig.legend(handles=[mpl.lines.Line2D([], [], marker=m, ls="", markerfacecolor=fc, markeredgecolor=INK,
                                          markeredgewidth=0.8, markersize=8 * (1.55 if m == "*" else 1), label=l)
                         for l, m, fc in legend_entries],
-               loc="lower center", ncol=len(legend_entries) if len(legend_entries) <= 5 else -(-len(legend_entries) // 2), frameon=False, fontsize=9.5, bbox_to_anchor=(0.5, 0))
-    plt.tight_layout(rect=(0, (0.5 + 0.3 * (len(legend_entries) > 5)) / fig.get_figheight(), 1, 1 - 0.85 / fig.get_figheight()), h_pad=2, w_pad=2)
+               loc="upper left", ncol=len(legend_entries) if len(legend_entries) <= 5 else -(-len(legend_entries) // 2), frameon=False, fontsize=9.5,
+               bbox_to_anchor=(0.005, 1 - 0.95 / fig.get_figheight()))
+    plt.tight_layout(rect=(0, 0, 1, 1 - (1.35 + 0.3 * (len(legend_entries) > 5)) / fig.get_figheight()), h_pad=2, w_pad=2)
     return fig, list(axes.flat[:n])
 
 def plot_name_map(naming, pick, languages):
@@ -1590,6 +1609,7 @@ def answers_from_reply(reply, rows, kind):
     kind='name': '1. British English: Red | Greek: Κόκκινο | …' (or the same without '1.');
     kind='colour': '1. #E5243B' (or just '#E5243B'), one line per name, in order."""
     text = re.sub(r"```\w*", "", reply)
+    text = re.sub(r"\\([.\-*_()#\[\]|!])", r"\1", text)      # markdown escapes copied from a chat: "1\." → "1."
     found = {}
     for line in text.splitlines():
         m = re.match(r"\s*\**\s*(\d+)\s*[.):\-]\s+(.+?)\s*$", line) or re.match(r"\s*\**\s*(\d+)\s*[.):]\s*(.+?)\s*$", line)
@@ -1621,12 +1641,12 @@ def answers_from_reply(reply, rows, kind):
     for n, hex_ in zip(numbers, colours.hex):
         parts = [p for p in re.split(r"\s*[|;]\s*", found.get(n, "")) if p.strip()]
         for k, part in enumerate(parts):
-            if ":" in part:
-                lang, name = part.split(":", 1)
-                lang = next((l for l in langs if norm(l) == norm(canonical_language(clean(lang)))), None)
-            else:
-                lang, name = (langs[k] if k < len(langs) else None), part
-            if lang:
+            m = re.match(r"\s*([^:–—=]+?)\s*(?::|\s[–—-]\s|=)\s*(.+)$", part)
+            lang = _match_language(clean(m.group(1)), langs) if m else None
+            name = m.group(2) if lang else part
+            if not lang:                              # no label we recognise: take the answers in the prompt's order
+                lang = langs[k] if k < len(langs) else None
+            if lang and (hex_, lang) not in values:
                 values[(hex_, lang)] = clean(name)
     return _answers_table(values, rows, kind)
 
@@ -1766,6 +1786,29 @@ def spelling_variant(ai, name, romanized=None):
         if prev[-1] == 1:
             return True
     return False
+
+def _match_language(label, langs):
+    """The language among `langs` that the AI meant by `label`: 'British English', 'English (UK)', 'UK English',
+    'English', 'Himba', 'Ελληνικά', 'Srpski', … Returns None if it can't tell."""
+    exact = next((l for l in langs if norm(l) == norm(canonical_language(label))), None)
+    if exact:
+        return exact
+    t = " ".join(re.sub(r"[^\w]+", " ", str(label).casefold()).split())
+    words = set(t.split())
+    keys = {"OtjiHimba": ("himba", "herero"), "Greek": ("greek", "ελληνικ"), "Spanish": ("spanish", "español", "espanol", "castellano"),
+            "French": ("french", "français", "francais"), "Serbian": ("serbian", "srpski", "српск")}
+    for lang, ks in keys.items():
+        if lang in langs and any(k in t for k in ks):
+            return lang
+    if "english" in t or "en" in words:
+        if words & {"us", "american", "usa"} and "American English" in langs:
+            return "American English"
+        if words & {"uk", "british", "gb", "britain"} and "British English" in langs:
+            return "British English"
+        english = [l for l in langs if "English" in l]
+        if len(english) == 1:
+            return english[0]
+    return None
 
 def _variants(cmp):
     return [(not ag) and spelling_variant(ai, n, rom) for ai, n, rom, ag in
@@ -2095,10 +2138,11 @@ def show_grounded(pal, languages):
     show("<b>Your grounded palette</b>")
     table(["Language", "Grounded palette"], rows, note=note)
 
-def repair_palettes(pal, spinner, languages, threshold, candidates=8):
+def repair_palettes(pal, spinner, languages, threshold, candidates=None):
     """Where a grounded palette has two colours closer than `threshold` (ΔE₀₀) under any viewing
     condition, swap one of them for another colour speakers still call by the same name (the next
-    tiles in the Spinner's Mapper), choosing the swap that best separates the palette."""
+    tiles in the Spinner's Mapper: all of them, unless `candidates` limits it), choosing the swap that best
+    separates the palette."""
     from itertools import combinations
     pal = pal.copy()
     pal["repaired_from"] = None
@@ -2126,7 +2170,9 @@ def repair_palettes(pal, spinner, languages, threshold, candidates=8):
                 if pal.at[k, "repaired_from"]:
                     continue
                 members = safe(spinner.category_members, pal.at[k, "name"], lang) or []
-                tried = [m for m in members[:candidates + 1] if m != pal.at[k, "grounded_hex"]][:candidates]
+                tried = [m for m in dict.fromkeys(members) if m != pal.at[k, "grounded_hex"]]   # every tile the Mapper shows
+                if candidates:
+                    tried = tried[:candidates]
                 prefetch_simulations(tried)
                 for m in tried:
                     trial = hexes.copy(); trial[pos] = m
@@ -2901,7 +2947,7 @@ def show_finding(pal, name=""):
   <div style="color:{MUTED};font-size:14px">ΔE₀₀<br><b style="font-size:34px;color:{INK}">{row.de00:.1f}</b></div>
 </div>
 {rt_line}
-<p style="margin:0 0 8px">Talk it through with your partner:</p>
+<p style="margin:0 0 8px">Talk it through with your partner, or think it through if you're working on your own:</p>
 <p style="margin:0 0 4px"><b>What pattern of failure does this reveal?</b> Did the AI default to a Western-centric focal colour,
 collapse a distinction the language maintains, or produce a colour that fails for colour vision deficiency or ageing?</p>
 <p style="margin:0"><b>What would a designer need to do differently</b> to avoid it in their own practice?</p>
@@ -3134,5 +3180,5 @@ def open_part_c():
          f'background:{INK};color:#FFFFFF;font-weight:700;font-size:13px;text-decoration:none;margin-top:6px">Open Part C ↗</a>'
          f'<div style="font-size:12px;color:{MUTED};margin-top:6px">Part C opens in a new tab; upload <code>partB_results.csv</code> there.</div>')
 
-TOOLKIT_VERSION = "2026-10-26 16:44"
+TOOLKIT_VERSION = "2026-10-26 22:24"
 print(f"Toolkit ready ✓  version {TOOLKIT_VERSION}  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))

@@ -313,11 +313,29 @@ class ApiSpinner:
         cid = self._ids[language].get(norm(name))
         if cid is None:
             raise KeyError(f"'{name}' is not one of the Colour Spinner's {language} names.")
-        resp = self.http.get(self.cfg["base_url"] + self.cfg["mobile_panels"],
-                             params={"language_id": self._lang(language), "colour_id": cid},
-                             timeout=self.timeout)
-        resp.raise_for_status()
-        hexes = find_colours(resp.json())
+        hexes = []
+        # First the Picker request asked for that name: its reply has the Mapper's best example in a known place
+        # (the RGB under "Best example of … (top left)"), the same value the Mapper shows.
+        form = {"language-select": self._lang(language), "translation-select": self._lang(language),
+                "age-cvd-simulation-select": "none", "synonyms": "on", "antonyms": "on",
+                "r": 128, "g": 128, "b": 128, "exact_colour_id": cid}
+        try:
+            resp = self.http.post(self.cfg["base_url"] + self.cfg["color_picker"], data=form, timeout=self.timeout)
+            if resp.status_code == 200:
+                res = parse_color_picker(resp.text)
+                if res.get("best_example") and same_name(res.get("name", ""), name):
+                    hexes = [res["best_example"]]
+        except Exception:
+            hexes = []
+        if not hexes:                       # otherwise the panel request the page makes for a typed-in name
+            try:
+                resp = self.http.get(self.cfg["base_url"] + self.cfg["mobile_panels"],
+                                     params={"language_id": self._lang(language), "colour_id": cid},
+                                     timeout=self.timeout)
+                resp.raise_for_status()
+                hexes = find_colours(resp.json())
+            except Exception:
+                hexes = []
         if not hexes:
             raise RuntimeError(f"Could not find a best example for '{name}' in the Spinner's reply.")
         self._best[key] = hexes[0]
@@ -716,7 +734,7 @@ def show_babel(table, languages, labels=None, first=""):
 _GOOD, _MID, _BAD = ("#DDEFE3", "#14532D"), ("#FBF0D0", "#6B4E00"), ("#F9DADA", "#7F1D1D")
 DELTA_E_THRESHOLD = 10      # ΔE₀₀: the one threshold used throughout the masterclass
 HARD_TO_NAME = 0.5          # naming confidence below this counts as hard to name
-LOW_CONFIDENCE = 0.3        # in the names table, bars below this are drawn lighter
+LOW_CONFIDENCE = 0.5        # in the names table, bars below this are drawn lighter
 
 def sim_phrase(condition):
     """'Deuteranopia' -> 'deuteranopia-simulated colours'; 'Age 80' -> 'colours simulated for age 80'."""
