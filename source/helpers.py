@@ -2003,11 +2003,11 @@ def corrected_sdg_card(pal, languages, path):
             if isinstance(h, str):
                 corr[int(r.sdg)] = h
                 if de00(h, SDG.hex[int(r.sdg)]) >= 0.5: marked.add(int(r.sdg))
-        rows.append((f"Corrected for {lang}", corr, marked))
+        rows.append((f"Grounded for {lang}", corr, marked))
     W, Hrow = 17 * 0.62 + 0.3, 1.05
     fig, ax = plt.subplots(figsize=(W, Hrow * len(rows) + 0.7)); ax.axis("off")
     ax.set_xlim(0, W); ax.set_ylim(Hrow * len(rows) + 0.5, -0.5)
-    ax.text(0.15, -0.25, "Your corrected test colours in the full SDG palette", fontsize=13, fontweight="bold", color=INK)
+    ax.text(0.15, -0.25, "Your grounded colours in the full SDG palette", fontsize=13, fontweight="bold", color=INK)
     for k, (label, colours, marked) in enumerate(rows):
         y = k * Hrow + 0.25
         ax.text(0.15, y, label, fontsize=9.5, color=MUTED, va="center")
@@ -2019,8 +2019,8 @@ def corrected_sdg_card(pal, languages, path):
             ax.text(x + 0.08, y + 0.56, str(i), fontsize=7.5, fontweight="bold", color=_ink_on(h), va="bottom")
             if i in marked:
                 ax.add_patch(mpl.patches.Rectangle((x, y + 0.7), 0.54, 0.05, fc=INK, ec="none"))
-    ax.text(0.15, Hrow * len(rows) + 0.35, "Marked: changed from the UN colour. Only the test colours were corrected; the "
-            "others are the UN's. A demonstration of evidence-based adjustment, not a proposal to change the UN's colours.",
+    ax.text(0.15, Hrow * len(rows) + 0.35, "Marked: changed from the UN colour. Only the test colours were grounded; the others "
+            "are the UN's. The SDG goals also have numbers, icons and names: an example, not a proposal to change the UN's colours.",
             fontsize=8, color=MUTED)
     fig.savefig(path, dpi=200, bbox_inches="tight", facecolor="white"); plt.close(fig)
     return True
@@ -2034,9 +2034,9 @@ def export_palette(pal, languages, stem="grounded_palette"):
     files, rows = [], []
     palette_card(pal, languages, path=f"{stem}_card.png", display_it=False)
     files.append(f"{stem}_card.png"); rows.append([f"<code>{stem}_card.png</code>", "Your grounded palette for each language, as a picture"])
-    if corrected_sdg_card(pal, languages, "corrected_sdg_palette.png"):
-        files.append("corrected_sdg_palette.png")
-        rows.append(["<code>corrected_sdg_palette.png</code>", "The full SDG palette with your test colours corrected for each audience"])
+    if corrected_sdg_card(pal, languages, "grounded_sdg_palette.png"):
+        files.append("grounded_sdg_palette.png")
+        rows.append(["<code>grounded_sdg_palette.png</code>", "The full SDG palette with your grounded colours for each audience"])
     previews = sorted(glob.glob("preview_*.png"))
     if previews:
         files += previews; rows.append(["<code>preview_….png</code>", "The designs you previewed in section 5"])
@@ -2239,13 +2239,13 @@ def show_corrected_sdg(pal, language, vision="Typical", threshold=DELTA_E_THRESH
                 f'<path d="M0,0 L8,4 L0,8 z" fill="#B4342D"/></marker></defs>{"".join(parts)}</svg>')
     view = "typical colour vision" if vision == "Typical" else condition_label(vision, " ").lower()
     html = (row(original, "The UN's original palette")
-            + row(corrected, f"Your test colours corrected for {_h(language)} (marked: changed from the UN colour; the others are unchanged)", changed)
+            + row(corrected, f"Your test colours grounded for {_h(language)} (marked: changed from the UN colour; the others are unchanged)", changed)
             + arcs_svg())
-    show(f"<b>Your test colours, corrected for {_h(language)}, in the full SDG palette</b> {small('as seen with ' + _h(view))}" + html)
+    show(f"<b>Your test colours, grounded for {_h(language)}, in the full SDG palette</b> {small('as seen with ' + _h(view))}" + html)
     body = ""
     if notes:
-        body += (f'<div style="margin-top:4px"><b style="color:#B4342D">New, made by the correction</b> '
-                 f'{small("(red arcs; an arrow points from a corrected colour to the unchanged colour it is now close to)")}</div>'
+        body += (f'<div style="margin-top:4px"><b style="color:#B4342D">New, made by grounding</b> '
+                 f'{small("(red arcs; an arrow points from a grounded colour to the unchanged colour it is now close to)")}</div>'
                  + "".join(f'<div style="font-size:13px;margin:3px 0">{n}</div>' for n in notes))
     if old_notes:
         body += (f'<div style="margin-top:8px"><b style="color:#5E5E5E">Already close in the UN palette</b> '
