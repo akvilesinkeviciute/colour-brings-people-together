@@ -48,4 +48,4 @@ Educators are welcome to reuse the activities in their own teaching.
 - United Nations (2015). Sustainable Development Goals. https://sdgs.un.org/goals
 
 ---
-*The SDG poster is reproduced from the United Nations' [communications materials](https://www.un.org/sustainabledevelopment/news/communications-material/); see [un.org/sustainabledevelopment](https://www.un.org/sustainabledevelopment). The content of this publication has not been approved by the United Nations and does not reflect the views of the United Nations or its officials or Member States.*
+*The SDG wheel is reproduced from the United Nations' [communications materials](https://www.un.org/sustainabledevelopment/news/communications-material/); see [un.org/sustainabledevelopment](https://www.un.org/sustainabledevelopment). The content of this publication has not been approved by the United Nations and does not reflect the views of the United Nations or its officials or Member States.*

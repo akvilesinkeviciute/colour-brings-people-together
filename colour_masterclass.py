@@ -247,9 +247,9 @@ class ApiSpinner:
                     return alt, rgb_to_hex((r, g, b)).upper()
             raise RuntimeError(f"The Colour Spinner's server returned an error ({resp.status_code}) for this colour, "
                                "even for its nearest neighbours. This is a problem on the Spinner's side, not your "
-                               "connection: try again in a minute, or set Backend to 'Copied from the browser'.")
+                               "connection: try again in a minute, or ask the facilitators to switch to copying from the browser.")
         raise RuntimeError(f"The Colour Spinner returned {resp.status_code}. Check your internet connection, "
-                           "or set Backend to 'Copied from the browser'.")
+                           "or ask the facilitators to switch to copying from the browser.")
 
     def lookup(self, hex_, language, target=None):
         """Everything the Spinner shows for one colour: name, confidence, best example, translation."""
@@ -1140,7 +1140,7 @@ def report_problems(problems):
     if problems:
         show("<b>Some lookups did not work</b><br>" + "<br>".join(map(esc, problems[:8])) +
              ("<br>…" if len(problems) > 8 else "") +
-             '<div class="note">Using the Colour Spinner: check your internet connection, or set Backend to '
+             '<div class="note">Using the Colour Spinner: check your internet connection, or ask the facilitators to switch to '
              '<i>Copied from the browser</i>. Using the sheet: add the missing rows and run the cell again.</div>')
 
 def show_names_table(naming, languages, you=None):
@@ -3031,6 +3031,15 @@ def show_corrected_sdg(pal, language, vision="Typical", threshold=DELTA_E_THRESH
         ids = " and ".join(str(i) for i, _ in hits)
         verb = "is" if len(hits) == 1 else "are"
         notes.append(f"<b>{ids}</b> (<i>{_h(named[hits[0][0]])}</i>) {verb} now ΔE₀₀ {hits[0][1]:.1f} from the unchanged SDG colour <b>{j}</b>.")
+    old, old_notes, seen = [], [], set()          # already close in the UN palette, and still close now
+    for i in tests:
+        for j in original:
+            if j == i or tuple(sorted((i, j))) in seen: continue
+            d_now = de00(sim(corrected[i]), sim(corrected[j]))
+            if d_now < threshold and de00(sim(original[i]), sim(original[j])) < threshold:
+                seen.add(tuple(sorted((i, j))))
+                old.append((i, j, d_now, False))
+                old_notes.append(f"{min(i, j)} and {max(i, j)} (ΔE₀₀ {d_now:.1f})")
     TILE, GAP = 50, 3                                   # framed tile width (40 + frame) and the gap between tiles
     def row(colours, label, mark=()):
         tiles = ""
@@ -3041,16 +3050,19 @@ def show_corrected_sdg(pal, language, vision="Typical", threshold=DELTA_E_THRESH
                       f'{framed(sim(h), str(i), 40, 36, 10.5)}{dot}</div>')
         return f'<div style="margin:6px 0 4px"><div style="font-size:12px;color:{MUTED};margin-bottom:4px">{label}</div><div style="white-space:nowrap">{tiles}</div></div>'
     def arcs_svg():
-        if not arcs: return ""
+        allarcs = [(i, j, d, arrow, True) for i, j, d, arrow in arcs] + [(i, j, d, arrow, False) for i, j, d, arrow in old]
+        if not allarcs: return ""
         x = lambda i: (i - 1) * (TILE + GAP) + TILE / 2
         parts = []
-        for k, (i, j, d, arrow) in enumerate(sorted(arcs, key=lambda t: abs(t[0] - t[1]))):
+        for k, (i, j, d, arrow, new) in enumerate(sorted(allarcs, key=lambda t: (not t[4], abs(t[0] - t[1])))):
             x1, x2 = x(i), x(j)
-            depth = 16 + 12 * k                         # each arc a little deeper, so none overlap
+            depth = 14 + 9 * k                          # each arc a little deeper, so none overlap
             mid = (x1 + x2) / 2
-            parts.append(f'<path d="M{x1:.0f},2 Q{mid:.0f},{depth * 2:.0f} {x2:.0f},2" fill="none" stroke="#B4342D" stroke-width="1.6"'
-                         f'{" marker-end=\"url(#ah)\"" if arrow else ""}/>')
-        H = 16 + 12 * len(arcs) + 6
+            style = ('stroke="#B4342D" stroke-width="1.7"' if new else
+                     'stroke="#8A8A85" stroke-width="1.2" stroke-dasharray="4 3"')
+            parts.append(f'<path d="M{x1:.0f},2 Q{mid:.0f},{depth * 2:.0f} {x2:.0f},2" fill="none" {style}'
+                         f'{" marker-end=\"url(#ah)\"" if arrow and new else ""}/>')
+        H = 14 + 9 * len(allarcs) + 8
         width = 17 * (TILE + GAP)
         return (f'<svg width="{width}" height="{H}" style="display:block;margin:0 0 6px">'
                 f'<defs><marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">'
@@ -3060,14 +3072,23 @@ def show_corrected_sdg(pal, language, vision="Typical", threshold=DELTA_E_THRESH
             + row(corrected, f"Your test colours corrected for {_h(language)} (marked: changed from the UN colour; the others are unchanged)", changed)
             + arcs_svg())
     show(f"<b>Your test colours, corrected for {_h(language)}, in the full SDG palette</b> {small('as seen with ' + _h(view))}" + html)
+    body = ""
     if notes:
-        show("<b>Check these again</b>" + small(" (the red arcs above join them: an arrow points from a corrected colour to the unchanged colour it is now close to)")
-             + "".join(f'<div style="font-size:13px;margin:3px 0">{n}</div>' for n in notes) +
+        body += (f'<div style="margin-top:4px"><b style="color:#B4342D">New, made by the correction</b> '
+                 f'{small("(red arcs; an arrow points from a corrected colour to the unchanged colour it is now close to)")}</div>'
+                 + "".join(f'<div style="font-size:13px;margin:3px 0">{n}</div>' for n in notes))
+    if old_notes:
+        body += (f'<div style="margin-top:8px"><b style="color:#5E5E5E">Already close in the UN palette</b> '
+                 f'{small("(grey dashed arcs; still below ΔE₀₀ " + format(threshold, "g") + ", so worth checking too)")}</div>'
+                 f'<div style="font-size:13px;margin:3px 0">{", ".join(old_notes)}</div>')
+    if body:
+        show(f"<b>Check these again</b>, as seen with {_h(view)}" + body +
              f'<div class="note">Grounding fixes what each name means; it can also merge colours that share a name, or '
-             f'move a colour close to one you didn\'t test.</div>')
+             f'move a colour close to one you didn\'t test. Problems that were already in the UN palette stay unless '
+             f'those colours are changed too.</div>')
     else:
-        show(f"<b>No new problems.</b> " + small(f"The correction brings no two colours closer than ΔE₀₀ {threshold:g} "
-                                                f"that were distinct before, as seen with {_h(view)}."))
+        show(f"<b>No problems.</b> " + small(f"No colour pair involving your test colours is closer than ΔE₀₀ {threshold:g}, "
+                                             f"as seen with {_h(view)}."))
 
 def spinner_link():
     """The Colour Spinner logo as a link, in a cell's output: links there open directly, without the
@@ -3113,5 +3134,5 @@ def open_part_c():
          f'background:{INK};color:#FFFFFF;font-weight:700;font-size:13px;text-decoration:none;margin-top:6px">Open Part C ↗</a>'
          f'<div style="font-size:12px;color:{MUTED};margin-top:6px">Part C opens in a new tab; upload <code>partB_results.csv</code> there.</div>')
 
-TOOLKIT_VERSION = "2026-10-26 14:55"
+TOOLKIT_VERSION = "2026-10-26 15:58"
 print(f"Toolkit ready ✓  version {TOOLKIT_VERSION}  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))

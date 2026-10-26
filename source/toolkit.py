@@ -241,9 +241,9 @@ class ApiSpinner:
                     return alt, rgb_to_hex((r, g, b)).upper()
             raise RuntimeError(f"The Colour Spinner's server returned an error ({resp.status_code}) for this colour, "
                                "even for its nearest neighbours. This is a problem on the Spinner's side, not your "
-                               "connection: try again in a minute, or set Backend to 'Copied from the browser'.")
+                               "connection: try again in a minute, or ask the facilitators to switch to copying from the browser.")
         raise RuntimeError(f"The Colour Spinner returned {resp.status_code}. Check your internet connection, "
-                           "or set Backend to 'Copied from the browser'.")
+                           "or ask the facilitators to switch to copying from the browser.")
 
     def lookup(self, hex_, language, target=None):
         """Everything the Spinner shows for one colour: name, confidence, best example, translation."""
