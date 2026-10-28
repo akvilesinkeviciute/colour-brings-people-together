@@ -1491,25 +1491,25 @@ def _distances(ids, condition):
 SIMILARITY_URL = ("https://raw.githubusercontent.com/akvilesinkeviciute/colour-brings-people-together/v1.0/"
                   "data/spinner_similarity.json")
 NAME_DISTINCT = 0.7         # name distinctiveness below this: as alike as a #1 synonym in the Spinner's Thesaurus
-_SIM = None
+_NAME_SIMILARITY = None
 
 def _similarity_data():
     """The Colour Spinner's name-similarity matrices (the JSD-based data behind its Thesaurus), per language."""
-    global _SIM
-    if _SIM is None:
+    global _NAME_SIMILARITY
+    if _NAME_SIMILARITY is None:
         import os, urllib.request
         for src in ("spinner_similarity.json", "data/spinner_similarity.json"):
             if os.path.exists(src):
-                _SIM = json.load(open(src, encoding="utf-8")); break
+                _NAME_SIMILARITY = json.load(open(src, encoding="utf-8")); break
         else:
             try:
                 with urllib.request.urlopen(SIMILARITY_URL, timeout=20) as f:
-                    _SIM = json.load(f)
+                    _NAME_SIMILARITY = json.load(f)
             except Exception:
-                _SIM = {}
-        for key, m in _SIM.items():              # look names up by their Latin spelling, ignoring accents
+                _NAME_SIMILARITY = {}
+        for key, m in _NAME_SIMILARITY.items():              # look names up by their Latin spelling, ignoring accents
             m["index"] = {norm(n.replace("_", " ")): k for k, n in enumerate(m["names"])}
-    return _SIM
+    return _NAME_SIMILARITY
 
 def _sim_key(language):
     return {"OtjiHimba": "himba"}.get(language, language.lower().replace(" ", "_"))
@@ -2095,6 +2095,9 @@ def load_names(source):
         if IN_COLAB:
             from google.colab import files
             up = files.upload()
+            if not up:
+                raise ValueError("No file was uploaded. Run this cell again and choose partB_results.csv, "
+                                 "or set NamesFrom to 'Type them in'.")
             partb = pd.read_csv(io.BytesIO(next(iter(up.values()))))
         else:
             partb = pd.read_csv("partB_results.csv")
@@ -3967,5 +3970,5 @@ def optimise_palettes(pal, spinner, languages, threshold=DELTA_E_THRESHOLD, cond
     pal.attrs["joint"] = True
     return pal
 
-TOOLKIT_VERSION = "2026-10-28 12:56"
+TOOLKIT_VERSION = "2026-10-28 16:33"
 print(f"Toolkit ready ✓  version {TOOLKIT_VERSION}  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))
