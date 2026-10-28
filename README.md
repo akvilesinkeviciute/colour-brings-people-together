@@ -37,6 +37,7 @@ For the AI steps, use the AI you use day to day. The notebook shows the prompt w
 | `colour_masterclass.py` | The shared toolkit the notebooks load: colour science through the [colour-science](https://www.colour-science.org) library (CIELAB and CIEDE2000), the Colour Spinner connection, AI helpers, charts and tables |
 | `images/` | The SDG wheel (from the [UN SDG communications materials](https://www.un.org/sustainabledevelopment/news/communications-material/)) and the Colour Spinner logo |
 | `FACILITATORS.md` | Notes for running the session, fallbacks, and methods and their limits |
+| `data/` | `spinner_similarity.json`: the Colour Spinner's name-similarity matrices (the data behind its Thesaurus), used by the scorecard |
 | `source/` | The toolkit's source (`toolkit.py`, `helpers.py`) and the script that builds `colour_masterclass.py` from them |
 
 Educators are welcome to reuse the activities in their own teaching.

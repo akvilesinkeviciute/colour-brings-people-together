@@ -194,6 +194,7 @@ def parse_color_picker(page):
         "translation_romanized": _html.unescape(tr_roman) if tr_roman else None,
         "name_ids": options,
         "members": _mapper_members(page),
+        "mapper_name": _strip(re.sub(r"<[^>]+>", "", (re.search(r"Best example of\s*(.*?)\s*\(top left\)", page, re.S) or [None, ""])[1] or "")),
     }
 
 _NEARBY_SHOWN = set()       # colours already reported as looked up via a neighbour
@@ -206,7 +207,7 @@ class ApiSpinner:
         self.http.headers.update({"HX-Request": "true",
                                   "User-Agent": "colour-masterclass-notebook (BCS HCI 2026)"})
         self.cfg, self.timeout = cfg, timeout
-        self._pages, self._best, self._ids, self._lang_ids = {}, {}, {}, {}
+        self._pages, self._best, self._ids, self._lang_ids, self._lang_names = {}, {}, {}, {}, {}
 
     def _lang(self, language):
         try:
@@ -299,10 +300,36 @@ class ApiSpinner:
         return found[0]
 
     def category_members(self, name, language):
-        """Colours speakers call `name`, from most to least typical (the Mapper's tiles)."""
-        best = self.best_example(name, language)
-        res = self.lookup(best, language)
-        return res.get("members", []) if same_name(res["name"], name) else []
+        """Colours speakers call `name`, from most to least typical: every tile of the Mapper, read from the
+        Picker's reply. First the page's way, asking for the name itself by its ID; otherwise via its best example."""
+        key = ("members", language, norm(name))
+        if key in self._pages:
+            return self._pages[key]
+        members = []
+        cid = self._language_ids(language).get(norm(name))
+        if cid is not None:
+            try:
+                best = self.best_example(name, language)
+                r, g, b = (int(v) for v in hex_to_rgb(best))
+            except Exception:
+                r, g, b = 128, 128, 128
+            form = {"language-select": self._lang(language), "translation-select": self._lang(language),
+                    "age-cvd-simulation-select": "none", "synonyms": "on", "antonyms": "on",
+                    "r": r, "g": g, "b": b, "exact_colour_id": cid}
+            try:
+                resp = self.http.post(self.cfg["base_url"] + self.cfg["color_picker"], data=form, timeout=self.timeout)
+                if resp.status_code == 200:
+                    res = parse_color_picker(resp.text)
+                    if same_name(res.get("mapper_name") or res.get("name", ""), name):
+                        members = res.get("members", [])
+            except Exception:
+                members = []
+        if not members:                     # otherwise: the Mapper of the best example, if the Namer gives it that name
+            best = self.best_example(name, language)
+            res = self.lookup(best, language)
+            members = res.get("members", []) if same_name(res.get("mapper_name") or res["name"], name) else []
+        self._pages[key] = members
+        return members
 
     def _language_ids(self, language):
         """This language's own name list, {name: ID}, as the page loads it when the language menu changes
@@ -315,6 +342,7 @@ class ApiSpinner:
                 if resp.status_code == 200:
                     for v, n in re.findall(r'<option value="(\d+)"[^>]*>(.*?)</option>', resp.text, re.S):
                         ids[norm(_strip(n))] = int(v)
+                        self._lang_names.setdefault(language, {})[norm(_strip(n))] = _strip(n)
             except Exception:
                 ids = {}
             self._lang_ids[language] = ids
