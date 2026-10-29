@@ -420,7 +420,86 @@ def find_colours(obj):
 
 
 # ── Vision simulations from the Colour Spinner ─────────────────────────────
-_SIM = {"client": None, "available": True, "error": "", "cache": {}}
+_SIM = {"client": None, "available": True, "error": "", "cache": {}, "failures": 0, "retry_at": 0.0, "local": set()}
+
+OFFLINE_URL = ("https://raw.githubusercontent.com/akvilesinkeviciute/colour-brings-people-together/v1.0/"
+               "data/spinner_offline.json")
+_OFFLINE = {"data": None, "checked": 0.0}
+_SPINNER = {"failures": 0, "down_until": 0.0}      # after repeated failures, go straight to the saved copy for a minute
+
+def _offline():
+    """The saved copy of the Colour Spinner's answers for the default settings (data/spinner_offline.json). It is
+    used only for answers the Spinner doesn't give. It isn't published unless the Spinner is down on the day, so if it
+    isn't there, it's looked for again a minute later. Returns {} if there is none."""
+    import os, time, urllib.request
+    if _OFFLINE["data"] or time.time() - _OFFLINE["checked"] < 60:
+        return _OFFLINE["data"] or {}
+    _OFFLINE["checked"] = time.time()
+    data = {}
+    for src in ("spinner_offline.json", "data/spinner_offline.json"):
+        if os.path.exists(src):
+            data = json.load(open(src, encoding="utf-8")); break
+    else:
+        try:
+            with urllib.request.urlopen(OFFLINE_URL, timeout=20) as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+    if data:
+        data["_pages"] = {(h.upper(), lang, tgt): res for h, lang, tgt, res in data.get("pages", [])}
+        data["_best"] = {(lang, key): h for lang, key, h in data.get("best", [])}
+        data["_members"] = {(lang, key): tiles for lang, key, tiles in data.get("members", [])}
+        data["_sims"] = {(h.upper(), c): out.upper() for h, c, out in data.get("sims", [])}
+        try:
+            show(small(f"Using the saved copy of the Colour Spinner's answers (made {data.get('made', '')}) for anything the "
+                       f"Spinner can't answer right now."))
+        except Exception:
+            pass
+    _OFFLINE["data"] = data
+    return data
+
+def use_saved_copy():
+    """Look for the saved copy straight away (facilitators: after uploading it on the day)."""
+    _OFFLINE.update(data=None, checked=0.0)
+    return bool(_offline())
+
+def _spinner_down():
+    import time
+    return time.time() < _SPINNER["down_until"]
+
+def _spinner_failed():
+    import time
+    _SPINNER["failures"] += 1
+    if _SPINNER["failures"] >= 2:                     # twice in a row: skip the Spinner for a minute
+        _SPINNER["down_until"] = time.time() + 60; _SPINNER["failures"] = 0
+
+def _with_saved_copy(live, saved_key):
+    """Ask the Spinner first; only if it doesn't answer (an error, or an empty answer), use the saved copy."""
+    import functools
+    @functools.wraps(live)
+    def inner(self, *a, **k):
+        err, res, asked = None, None, False
+        if not _spinner_down():
+            asked = True
+            try:
+                res = live(self, *a, **k)
+                if res not in (None, [], {}):
+                    _SPINNER["failures"] = 0
+                    return res
+            except KeyError:
+                raise                                  # not one of the Spinner's names: no saved answer either
+            except Exception as e:
+                err = e
+                _spinner_failed()
+        saved = saved_key(self, *a, **k)
+        if saved not in (None, [], {}):
+            return saved
+        if err is not None:
+            raise err
+        if not asked:
+            raise RuntimeError("The Colour Spinner isn't answering right now; try again in a minute.")
+        return res
+    return inner
 
 class SimulationUnavailable(RuntimeError):
     """The Colour Spinner's simulation could not be reached."""
@@ -439,14 +518,23 @@ def simulate(c, condition="Typical"):
         return hx
     key = (hx, condition)
     if key not in _SIM["cache"]:
-        if not _SIM["available"]:
-            raise SimulationUnavailable(_SIM["error"])
-        try:
-            _SIM["cache"][key] = _sim_client().simulate(hx, condition)
-        except Exception as e:
-            _SIM["available"] = False
-            _SIM["error"] = str(e)[:120]
-            raise SimulationUnavailable(_SIM["error"]) from e
+        import time
+        if not _SIM["available"] and time.time() >= _SIM["retry_at"]:
+            _SIM["available"] = True                      # try the Spinner again after a pause
+        if _SIM["available"]:
+            try:
+                _SIM["cache"][key] = _sim_client().simulate(hx, condition)
+                _SIM["failures"] = 0
+                return _SIM["cache"][key]
+            except Exception as e:
+                _SIM["failures"] += 1
+                _SIM["error"] = str(e)[:120]
+                if _SIM["failures"] >= 2:                 # twice in a row: pause for a minute
+                    _SIM["available"] = False; _SIM["retry_at"] = time.time() + 60
+        saved = _offline().get("_sims", {}).get(key)      # the Spinner's own answer, saved earlier
+        if saved:
+            return saved
+        raise SimulationUnavailable(_SIM["error"] or "The Colour Spinner didn't answer.")
     return _SIM["cache"][key]
 
 def retry_simulations():
@@ -456,7 +544,9 @@ def retry_simulations():
 def prefetch_simulations(hexes, conditions=CONDITIONS):
     """Fetch the Spinner's simulations for many colours at once (six requests in parallel)."""
     from concurrent.futures import ThreadPoolExecutor
-    jobs = [(h, c) for h in dict.fromkeys(hexes) for c in conditions if c != "Typical"]
+    jobs = [(h.upper() if h.startswith("#") else "#" + h.upper(), c) for h in dict.fromkeys(hexes) for c in conditions
+            if c != "Typical"]
+    jobs = [j for j in jobs if j not in _SIM["cache"]]
     if not jobs or not _SIM["available"]:
         return
     try:                                  # one request first, so an outage fails fast
@@ -485,11 +575,9 @@ def needs_simulations(default=None):
     return wrap
 
 def show_simulation_problem(err=""):
-    show('<div class="card"><b>The Colour Spinner\'s vision simulations could not be reached</b>'
-         '<p style="margin:6px 0 0">This part of the audit uses the Spinner\'s own colour vision deficiency '
-         'and age models, so it needs the Spinner online. Check your internet connection, then run '
-         '<code>retry_simulations()</code> and this cell again. Meanwhile, use the Spinner\'s '
-         '"Simulate age/CVD" menu in your browser.</p>'
+    show('<div class="card"><b>The Colour Spinner didn\'t answer in time</b>'
+         '<p style="margin:6px 0 0">This view needs the Spinner\'s simulations for colours that aren\'t in the saved '
+         'copy, such as the AI\'s own colours. Wait a minute and run the cell again; it usually works on a second try.</p>'
          + (f'<div class="note">{_h(err)}</div>' if err else "") + '</div>')
 
 
@@ -508,6 +596,20 @@ def parse_colour(s):
     if len(nums) == 3 and not re.fullmatch(r"#?[0-9A-Fa-f]{6}", s):
         return rgb_to_hex([int(n) for n in nums])
     return "#" + s.lstrip("#").upper()
+
+ApiSpinner.lookup = _with_saved_copy(ApiSpinner.lookup,
+    lambda self, h, language, target=None: _offline().get("_pages", {}).get((h.upper(), language, target or language)))
+ApiSpinner.best_example = _with_saved_copy(ApiSpinner.best_example,
+    lambda self, name, language: _offline().get("_best", {}).get((language, norm(name))))
+ApiSpinner.category_members = _with_saved_copy(ApiSpinner.category_members,
+    lambda self, name, language: _offline().get("_members", {}).get((language, norm(name))))
+def _saved_names(self, language):
+    off = _offline()
+    if language in off.get("lang_ids", {}):
+        self._lang_names[language] = off.get("lang_names", {}).get(language, {})
+        return off["lang_ids"][language]
+    return None
+ApiSpinner._language_ids = _with_saved_copy(ApiSpinner._language_ids, _saved_names)
 
 class SheetSpinner:
     """Values copied by hand from the Colour Spinner's Namer and Mapper panels.
@@ -1380,15 +1482,18 @@ def _shape_legend(ax, entries):
 MAP_HALF_WINDOW = 20        # ΔE-sized half-width of each map panel; points further out are drawn at the edge
 
 def _to_window(ax, p, centre):
-    """A point inside the panel, or the place where its line leaves the panel (and whether it was moved)."""
+    """A point inside the panel, or the place where its line leaves the panel (and whether it was moved).
+    A margin keeps every shape whole: points closer to the edge than that are treated as lying outside."""
     (x0, x1), (y0, y1) = ax.get_xlim(), ax.get_ylim()
+    mx, my = 0.06 * (x1 - x0), 0.06 * (y1 - y0)
+    x0, x1, y0, y1 = x0 + mx, x1 - mx, y0 + my, y1 - my
     p, c = np.asarray(p, float), np.asarray(centre, float)
     if x0 <= p[0] <= x1 and y0 <= p[1] <= y1:
         return p, False
     d = p - c
     t = min([((x1 if d[0] > 0 else x0) - c[0]) / d[0] if d[0] else np.inf,
              ((y1 if d[1] > 0 else y0) - c[1]) / d[1] if d[1] else np.inf])
-    return c + d * t * 0.93, True
+    return c + d * t, True
 
 def _edge_arrow(ax, start, end):
     ax.annotate("", xy=end, xytext=start, arrowprops=dict(arrowstyle="-|>", color="#1C1C1C", lw=0.7,
@@ -1676,7 +1781,8 @@ def scorecard_pairs(pick, naming, language, condition="Typical"):
     card.attrs.update(language=language, condition=condition)
     return card
 
-SCORECARD_DE = 10           # the scorecard's lines: ΔE₀₀ 10 between the two colours,
+PART_B_THRESHOLD = 10       # ΔE₀₀: the threshold used throughout Part B (Part C uses DELTA_E_THRESHOLD, 5)
+SCORECARD_DE = PART_B_THRESHOLD   # the scorecard's lines: ΔE₀₀ 10 between the two colours,
 SCORECARD_SIMILARITY = 0.5  # and name similarity 0.5 (name distinctiveness 0.5)
 
 def plot_pair_scorecard(card, confusable_below=SCORECARD_DE, name_line=1 - SCORECARD_SIMILARITY):
@@ -2281,10 +2387,12 @@ def show_round_trip(pal):
 def plot_ai_vs_speakers(pal, languages, threshold):
     """One panel per test colour (or per language, for names typed in by hand): for each name, the AI's colour
     (outlined shape) joined by a thin line to the speakers' best example (filled shape), one shape per language."""
-    ok = pal.dropna(subset=["ai_hex", "spinner_hex"])
+    ok = per_test_colour(pal).dropna(subset=["ai_hex", "spinner_hex"])     # names shared by test colours: in each panel
     if ok.empty: return
     by_sdg = "sdg" in ok and ok.sdg.notna().all()
-    keys = list(dict.fromkeys(ok.sdg.astype(int))) if by_sdg else [l for l in languages if l in set(ok.language)]
+    order = list(dict.fromkeys(_BY_SDG.sdg.astype(int))) if _BY_SDG is not None and len(_BY_SDG) else []
+    keys = ([k for k in order if k in set(ok.sdg.astype(int))] or list(dict.fromkeys(ok.sdg.astype(int)))) if by_sdg \
+           else [l for l in languages if l in set(ok.language)]
     groups = []
     for k in keys:
         g = ok[ok.sdg == k] if by_sdg else ok[ok.language == k]
@@ -2492,17 +2600,19 @@ def closest_pairs(pal, languages, conditions=CONDITIONS):
     return pd.DataFrame(rows).set_index(["language", "palette"])
 
 @needs_simulations()
-def show_closest_pairs(pal, languages, threshold=DELTA_E_THRESHOLD, conditions=CONDITIONS):
-    """For each language's AI and grounded palette: its two closest colours, under the viewing condition where they
-    are closest, as they look there, with the ΔE₀₀ between the simulated colours."""
+def show_closest_pairs(pal, languages, threshold=DELTA_E_THRESHOLD, conditions=CONDITIONS, before=None):
+    """For each language: the two closest colours of the palette, under the viewing condition where they are
+    closest, as they look there, with the ΔE₀₀ between the simulated colours. With `before` (the palette before
+    the repair), the columns compare before and after the repair; otherwise the AI's palette and the grounded one."""
     from itertools import combinations
-    prefetch_simulations([h for h in pd.concat([pal.ai_hex, pal.grounded_hex]) if isinstance(h, str)])
+    cols = ([("Before repair", before, "grounded_hex"), ("After repair", pal, "grounded_hex")] if before is not None else
+            [("AI palette", pal, "ai_hex"), ("Grounded palette", pal, "grounded_hex")])
+    prefetch_simulations([h for _, d, c in cols for h in d[c] if isinstance(h, str)])
     rows = []
     for lang in languages:
-        p = pal[pal.language == lang]
         cells = []
-        for label, col in [("AI palette", "ai_hex"), ("Grounded palette", "grounded_hex")]:
-            hexes = [h for h in p[col] if isinstance(h, str)]
+        for label, d, col in cols:
+            hexes = [h for h in d[d.language == lang][col] if isinstance(h, str)]
             if len(hexes) < 2:
                 cells.append(small("fewer than two colours")); continue
             d, c, a, b = min((de00(simulate(x, cc), simulate(y, cc)), cc, x, y)
@@ -2513,7 +2623,7 @@ def show_closest_pairs(pal, languages, threshold=DELTA_E_THRESHOLD, conditions=C
         rows.append([f"<b>{_h(lang)}</b>"] + cells)
     show("<b>" + (f"With {vision_phrase(conditions[0])}, can you tell each palette's colours apart?" if len(conditions) == 1
                   else "Can every viewer still tell each palette's colours apart?") + "</b>")
-    table(["Language", "AI palette", "Grounded palette"], rows, valign="top",
+    table(["Language"] + [label for label, _, _ in cols], rows, valign="top",
           note=f"For each palette: its two closest colours under the viewing condition where they are closest, as they "
                f"look there, and the ΔE₀₀ between the simulated colours. Red: below {threshold:g}. A pair still red after "
                f"the repair can't be separated within its names: give it a second cue, such as a pattern, label or icon.")
@@ -3571,13 +3681,23 @@ def spinner_link():
 # ── Menus that list only what the pair chose, and redraw straight away ─────
 VISIONS = ["Typical", "Protanopia", "Deuteranopia", "Tritanopia", "Age 40", "Age 60", "Age 80"]
 
+def _safe_render(render, choices):
+    """Draw one choice of the menus; if the Spinner doesn't answer, say so instead of showing a traceback."""
+    try:
+        render(**choices)
+    except SimulationUnavailable:
+        show("<b>The Colour Spinner didn't answer in time.</b> " + small("Its simulations are needed for this view. "
+             "Wait a minute and choose again; typical vision always works."))
+    except Exception as e:
+        show("<b>This view couldn't be drawn.</b> " + small(_h(f"{type(e).__name__}: {e}")[:300]))
+
 def live_controls(controls, render):
     """Dropdown menus built when the cell runs (so they list only the pair's own languages), with the output
     redrawn whenever a choice changes. controls: {key: (label, options, default)}; render(**choices)."""
     try:
         import ipywidgets as w
     except ImportError:
-        render(**{k: d for k, (_, _, d) in controls.items()}); return
+        _safe_render(render, {k: d for k, (_, _, d) in controls.items()}); return
     menus = {k: w.Dropdown(options=list(opts), value=d if d in opts else list(opts)[0], description=label,
                            style={"description_width": "initial"}, layout=w.Layout(width="auto", margin="0 18px 0 0"))
              for k, (label, opts, d) in controls.items()}
@@ -3585,7 +3705,7 @@ def live_controls(controls, render):
     def draw(*_):
         out.clear_output(wait=True)
         with out:
-            render(**{k: m.value for k, m in menus.items()})
+            _safe_render(render, {k: m.value for k, m in menus.items()})
     for m in menus.values():
         m.observe(draw, names="value")
     try:
@@ -3777,6 +3897,7 @@ def rename_shared_names(pal, spinner, languages, top=SYNONYMS_TO_TRY, conditions
                                                              if "romanized" in pal and isinstance(pal.at[j, "romanized"], str)}
             order = sorted(((v, c) for c, v in enumerate(m["similarity"][row]) if c != row), reverse=True)
             others = [pal.at[j, "grounded_hex"] for j in idx if j != k]
+            other_ids = [(int(pal.at[j, "sdg"]), pal.at[j, "name"]) for j in idx if j != k]
             best = None
             tried = 0
             for sim, c in order:
@@ -3789,15 +3910,18 @@ def rename_shared_names(pal, spinner, languages, top=SYNONYMS_TO_TRY, conditions
                 hexb = safe(spinner.best_example, shown, lang)
                 if not isinstance(hexb, str): continue
                 prefetch_simulations([hexb] + others)
-                score = min((de00(simulate(hexb, cc), simulate(o, cc)) for cc in conditions for o in others), default=np.inf)
+                dists = [(de00(simulate(hexb, cc), simulate(o, cc)), oid) for cc in conditions for o, oid in zip(others, other_ids)]
+                score, near = min(dists, key=lambda t: t[0]) if dists else (np.inf, None)
                 if score >= DELTA_E_THRESHOLD:          # the most similar synonym that can be told apart at a glance
-                    best = (score, shown, latin, hexb, sim); break
+                    best = (score, shown, latin, hexb, sim, near); break
                 if best is None or score > best[0]:     # otherwise, remember the most distinct one
-                    best = (score, shown, latin, hexb, sim)
+                    best = (score, shown, latin, hexb, sim, near)
             if not best:
                 log.append({**entry, "new": None, "why": f"none of its top {top} synonyms could be used"}); continue
-            score, shown, latin, hexb, sim = best
-            log.append({**entry, "new": shown, "similarity": sim, "hex": hexb, "nearest": score})
+            score, shown, latin, hexb, sim, near = best
+            log.append({**entry, "new": shown, "similarity": sim, "hex": hexb, "nearest": score,
+                        "nearest_sdg": near[0] if near else None, "nearest_name": near[1] if near else None,
+                        "vision": conditions[0] if len(conditions) == 1 else None})
             pal.at[k, "renamed_from"] = pal.at[k, "name"]
             pal.at[k, "orig_spinner_hex"] = pal.at[k, "spinner_hex"]
             pal.at[k, "orig_romanized"] = rom
@@ -3821,7 +3945,9 @@ def show_renames(pal):
                          f"<i>{_h(e['old'])}</i>, like test colour {e['shared_with']}",
                          f"<b>{_h(e['new'])}</b> {swatch(e['hex'])}<br>{small('a synonym of ' + _h(e['old']) + ', similarity ' + format(e['similarity'], '.2f'))}",
                          pill(f"ΔE₀₀ {e['nearest']:.1f}", "good" if e["nearest"] >= DELTA_E_THRESHOLD else "mid") + " " +
-                         small("to the nearest other colour, worst-off viewer")])
+                         small((f"to test colour {e['nearest_sdg']} ({_h(e['nearest_name'])}), the nearest"
+                                if e.get("nearest_sdg") is not None else "to the nearest other colour") + ", " +
+                               ("with " + vision_phrase(e["vision"]) if e.get("vision") else "for the worst-off viewer"))])
         else:
             rows.append([f"<b>{_h(e['language'])}</b>", framed(SDG.hex[e["sdg"]], str(e["sdg"])),
                          f"<i>{_h(e['old'])}</i>, like test colour {e['shared_with']}", small("not renamed: " + e["why"]),
@@ -3831,7 +3957,7 @@ def show_renames(pal):
           note=f"Two test colours with the same name would be confused when people talk about them, however different they look. "
                f"The later one gets a different name: the most similar synonym of the shared name (among its top {SYNONYMS_TO_TRY} in the "
                f"Spinner's Thesaurus) whose best example can be told apart at a glance from your other colours (ΔE₀₀ {DELTA_E_THRESHOLD:g} "
-               f"or more for every viewer); if none can, the one that comes closest.")
+               f"or more with typical colour vision); if none can, the one that comes closest. Step 3 then checks other kinds of vision.")
 
 
 def undo_renames(pal):
@@ -4025,9 +4151,74 @@ def repair_for(pal, spinner, languages, vision="Typical", threshold=DELTA_E_THRE
     else:
         show(f"<b>No repairs needed</b> " + small(f"for {vision_phrase(vision)}: "
              f"every pair is already ΔE₀₀ {threshold:g} or more apart, or no colour of the same name would help."))
-    show_closest_pairs(out, languages, threshold, conditions=cond)
+    show_closest_pairs(out, languages, threshold, conditions=cond, before=pal)
     show_grounded(out, languages, title=f"Your final palette, corrected for {vision_phrase(vision)}")
     return out
 
-TOOLKIT_VERSION = "2026-10-29 13:30"
+
+# ── Making the saved copy of the Spinner's answers (run once, while the Spinner is up) ──
+DEFAULT_SUBSET = [3, 6, 10, 14, 15]
+ALL_LANGUAGES_7 = ["American English", "British English", "French", "Greek", "OtjiHimba", "Serbian", "Spanish"]
+
+def build_offline_cache(subset=DEFAULT_SUBSET, languages=ALL_LANGUAGES_7, path="spinner_offline.json"):
+    """Ask the Colour Spinner, once, for everything the notebooks need with the default test colours, and save it:
+    the name of each test colour in every language; every name's best example; the Mapper tiles of the test colours'
+    names and of their Thesaurus synonyms, and what speakers call the tiles further than ΔE₀₀ 5 from the best
+    example; and the simulations of the 17 SDG colours, every best example and those tiles. Saves as it goes,
+    so it can be rerun if interrupted. Takes a while: about 20–40 minutes, depending on the Spinner."""
+    import time
+    sp = ApiSpinner()
+    out = {"made": time.strftime("%Y-%m-%d %H:%M"), "subset": list(subset), "pages": [], "best": [], "members": [],
+           "lang_ids": {}, "lang_names": {}, "sims": []}
+    def save():
+        out["pages"] = [[k[0], k[1], k[2], v] for k, v in sp._pages.items() if k[0] != "members"]
+        out["members"] = [[k[1], k[2], v] for k, v in sp._pages.items() if k[0] == "members"]
+        out["best"] = [[k[0], k[1], v] for k, v in sp._best.items()]
+        out["lang_ids"], out["lang_names"] = sp._lang_ids, sp._lang_names
+        out["sims"] = [[k[0], k[1], v] for k, v in _SIM["cache"].items() if k not in _SIM["local"]]
+        json.dump(out, open(path, "w", encoding="utf-8"), ensure_ascii=False)
+    step = lambda t: print(f"{time.strftime('%H:%M:%S')}  {t}", flush=True)
+    # 1 · every language's names, and each name's best example
+    for lang in languages:
+        names = sp._language_ids(lang)
+        step(f"{lang}: {len(names)} names")
+        for key in names:
+            shown = sp._lang_names.get(lang, {}).get(key, key)
+            try_call(sp.best_example, shown, lang)
+        save()
+    # 2 · the test colours' names in every language, and their Mapper tiles (and those of their synonyms)
+    data = _similarity_data()
+    for i in subset:
+        for lang in languages:
+            res = try_call(sp.lookup, SDG.hex[i], lang)
+            if not res: step(f"  SDG {i} in {lang}: no answer"); continue
+            names = [res["name"]]
+            m = data.get(_sim_key(lang))
+            if m:                                    # its synonyms too, for the renaming step
+                row = next((m["index"][norm(c)] for c in (res["name"], res.get("romanized")) if isinstance(c, str) and norm(c) in m["index"]), None)
+                if row is not None:
+                    order = sorted(((v, c) for c, v in enumerate(m["similarity"][row]) if c != row), reverse=True)[:SYNONYMS_TO_TRY]
+                    names += [n for n in (_spinner_name(sp, lang, m["names"][c]) for _, c in order) if n]
+            for n in names:
+                tiles = try_call(sp.category_members, n, lang) or []
+                best = try_call(sp.best_example, n, lang)
+                for t in tiles:                       # what speakers call the tiles outside the core
+                    if best and de00(t, best) >= DELTA_E_THRESHOLD:
+                        try_call(sp.name, t, lang)
+            step(f"  SDG {i} in {lang}: {res['name']} and {len(names) - 1} synonyms")
+        save()
+    # 3 · the simulations
+    hexes = list(SDG.hex) + list(dict.fromkeys(v for v in sp._best.values() if isinstance(v, str)))
+    hexes += [t for k, v in sp._pages.items() if k[0] == "members" for t in v]
+    hexes = list(dict.fromkeys(h.upper() for h in hexes))
+    step(f"simulating {len(hexes)} colours under 6 conditions")
+    for k in range(0, len(hexes), 60):
+        prefetch_simulations(hexes[k:k + 60]); save()
+        step(f"  {min(k + 60, len(hexes))} of {len(hexes)}")
+    save()
+    step(f"done: {path}, {len(out['pages'])} lookups, {len(out['best'])} best examples, {len(out['members'])} Mapper lists, "
+         f"{len(out['sims'])} simulations")
+    return path
+
+TOOLKIT_VERSION = "2026-10-29 18:24"
 print(f"Toolkit ready ✓  version {TOOLKIT_VERSION}  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))

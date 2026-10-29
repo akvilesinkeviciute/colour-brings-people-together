@@ -414,7 +414,86 @@ def find_colours(obj):
 
 
 # ── Vision simulations from the Colour Spinner ─────────────────────────────
-_SIM = {"client": None, "available": True, "error": "", "cache": {}}
+_SIM = {"client": None, "available": True, "error": "", "cache": {}, "failures": 0, "retry_at": 0.0, "local": set()}
+
+OFFLINE_URL = ("https://raw.githubusercontent.com/akvilesinkeviciute/colour-brings-people-together/v1.0/"
+               "data/spinner_offline.json")
+_OFFLINE = {"data": None, "checked": 0.0}
+_SPINNER = {"failures": 0, "down_until": 0.0}      # after repeated failures, go straight to the saved copy for a minute
+
+def _offline():
+    """The saved copy of the Colour Spinner's answers for the default settings (data/spinner_offline.json). It is
+    used only for answers the Spinner doesn't give. It isn't published unless the Spinner is down on the day, so if it
+    isn't there, it's looked for again a minute later. Returns {} if there is none."""
+    import os, time, urllib.request
+    if _OFFLINE["data"] or time.time() - _OFFLINE["checked"] < 60:
+        return _OFFLINE["data"] or {}
+    _OFFLINE["checked"] = time.time()
+    data = {}
+    for src in ("spinner_offline.json", "data/spinner_offline.json"):
+        if os.path.exists(src):
+            data = json.load(open(src, encoding="utf-8")); break
+    else:
+        try:
+            with urllib.request.urlopen(OFFLINE_URL, timeout=20) as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+    if data:
+        data["_pages"] = {(h.upper(), lang, tgt): res for h, lang, tgt, res in data.get("pages", [])}
+        data["_best"] = {(lang, key): h for lang, key, h in data.get("best", [])}
+        data["_members"] = {(lang, key): tiles for lang, key, tiles in data.get("members", [])}
+        data["_sims"] = {(h.upper(), c): out.upper() for h, c, out in data.get("sims", [])}
+        try:
+            show(small(f"Using the saved copy of the Colour Spinner's answers (made {data.get('made', '')}) for anything the "
+                       f"Spinner can't answer right now."))
+        except Exception:
+            pass
+    _OFFLINE["data"] = data
+    return data
+
+def use_saved_copy():
+    """Look for the saved copy straight away (facilitators: after uploading it on the day)."""
+    _OFFLINE.update(data=None, checked=0.0)
+    return bool(_offline())
+
+def _spinner_down():
+    import time
+    return time.time() < _SPINNER["down_until"]
+
+def _spinner_failed():
+    import time
+    _SPINNER["failures"] += 1
+    if _SPINNER["failures"] >= 2:                     # twice in a row: skip the Spinner for a minute
+        _SPINNER["down_until"] = time.time() + 60; _SPINNER["failures"] = 0
+
+def _with_saved_copy(live, saved_key):
+    """Ask the Spinner first; only if it doesn't answer (an error, or an empty answer), use the saved copy."""
+    import functools
+    @functools.wraps(live)
+    def inner(self, *a, **k):
+        err, res, asked = None, None, False
+        if not _spinner_down():
+            asked = True
+            try:
+                res = live(self, *a, **k)
+                if res not in (None, [], {}):
+                    _SPINNER["failures"] = 0
+                    return res
+            except KeyError:
+                raise                                  # not one of the Spinner's names: no saved answer either
+            except Exception as e:
+                err = e
+                _spinner_failed()
+        saved = saved_key(self, *a, **k)
+        if saved not in (None, [], {}):
+            return saved
+        if err is not None:
+            raise err
+        if not asked:
+            raise RuntimeError("The Colour Spinner isn't answering right now; try again in a minute.")
+        return res
+    return inner
 
 class SimulationUnavailable(RuntimeError):
     """The Colour Spinner's simulation could not be reached."""
@@ -433,14 +512,23 @@ def simulate(c, condition="Typical"):
         return hx
     key = (hx, condition)
     if key not in _SIM["cache"]:
-        if not _SIM["available"]:
-            raise SimulationUnavailable(_SIM["error"])
-        try:
-            _SIM["cache"][key] = _sim_client().simulate(hx, condition)
-        except Exception as e:
-            _SIM["available"] = False
-            _SIM["error"] = str(e)[:120]
-            raise SimulationUnavailable(_SIM["error"]) from e
+        import time
+        if not _SIM["available"] and time.time() >= _SIM["retry_at"]:
+            _SIM["available"] = True                      # try the Spinner again after a pause
+        if _SIM["available"]:
+            try:
+                _SIM["cache"][key] = _sim_client().simulate(hx, condition)
+                _SIM["failures"] = 0
+                return _SIM["cache"][key]
+            except Exception as e:
+                _SIM["failures"] += 1
+                _SIM["error"] = str(e)[:120]
+                if _SIM["failures"] >= 2:                 # twice in a row: pause for a minute
+                    _SIM["available"] = False; _SIM["retry_at"] = time.time() + 60
+        saved = _offline().get("_sims", {}).get(key)      # the Spinner's own answer, saved earlier
+        if saved:
+            return saved
+        raise SimulationUnavailable(_SIM["error"] or "The Colour Spinner didn't answer.")
     return _SIM["cache"][key]
 
 def retry_simulations():
@@ -450,7 +538,9 @@ def retry_simulations():
 def prefetch_simulations(hexes, conditions=CONDITIONS):
     """Fetch the Spinner's simulations for many colours at once (six requests in parallel)."""
     from concurrent.futures import ThreadPoolExecutor
-    jobs = [(h, c) for h in dict.fromkeys(hexes) for c in conditions if c != "Typical"]
+    jobs = [(h.upper() if h.startswith("#") else "#" + h.upper(), c) for h in dict.fromkeys(hexes) for c in conditions
+            if c != "Typical"]
+    jobs = [j for j in jobs if j not in _SIM["cache"]]
     if not jobs or not _SIM["available"]:
         return
     try:                                  # one request first, so an outage fails fast
@@ -479,11 +569,9 @@ def needs_simulations(default=None):
     return wrap
 
 def show_simulation_problem(err=""):
-    show('<div class="card"><b>The Colour Spinner\'s vision simulations could not be reached</b>'
-         '<p style="margin:6px 0 0">This part of the audit uses the Spinner\'s own colour vision deficiency '
-         'and age models, so it needs the Spinner online. Check your internet connection, then run '
-         '<code>retry_simulations()</code> and this cell again. Meanwhile, use the Spinner\'s '
-         '"Simulate age/CVD" menu in your browser.</p>'
+    show('<div class="card"><b>The Colour Spinner didn\'t answer in time</b>'
+         '<p style="margin:6px 0 0">This view needs the Spinner\'s simulations for colours that aren\'t in the saved '
+         'copy, such as the AI\'s own colours. Wait a minute and run the cell again; it usually works on a second try.</p>'
          + (f'<div class="note">{_h(err)}</div>' if err else "") + '</div>')
 
 
@@ -502,6 +590,20 @@ def parse_colour(s):
     if len(nums) == 3 and not re.fullmatch(r"#?[0-9A-Fa-f]{6}", s):
         return rgb_to_hex([int(n) for n in nums])
     return "#" + s.lstrip("#").upper()
+
+ApiSpinner.lookup = _with_saved_copy(ApiSpinner.lookup,
+    lambda self, h, language, target=None: _offline().get("_pages", {}).get((h.upper(), language, target or language)))
+ApiSpinner.best_example = _with_saved_copy(ApiSpinner.best_example,
+    lambda self, name, language: _offline().get("_best", {}).get((language, norm(name))))
+ApiSpinner.category_members = _with_saved_copy(ApiSpinner.category_members,
+    lambda self, name, language: _offline().get("_members", {}).get((language, norm(name))))
+def _saved_names(self, language):
+    off = _offline()
+    if language in off.get("lang_ids", {}):
+        self._lang_names[language] = off.get("lang_names", {}).get(language, {})
+        return off["lang_ids"][language]
+    return None
+ApiSpinner._language_ids = _with_saved_copy(ApiSpinner._language_ids, _saved_names)
 
 class SheetSpinner:
     """Values copied by hand from the Colour Spinner's Namer and Mapper panels.
