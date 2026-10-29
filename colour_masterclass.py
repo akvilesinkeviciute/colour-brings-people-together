@@ -1676,7 +1676,10 @@ def scorecard_pairs(pick, naming, language, condition="Typical"):
     card.attrs.update(language=language, condition=condition)
     return card
 
-def plot_pair_scorecard(card, confusable_below=DELTA_E_THRESHOLD, name_line=NAME_DISTINCT):
+SCORECARD_DE = 10           # the scorecard's lines: ΔE₀₀ 10 between the two colours,
+SCORECARD_SIMILARITY = 0.5  # and name similarity 0.5 (name distinctiveness 0.5)
+
+def plot_pair_scorecard(card, confusable_below=SCORECARD_DE, name_line=1 - SCORECARD_SIMILARITY):
     """The colour identity scorecard, one point per pair of test colours: name distinctiveness between their
     names (across) against the ΔE₀₀ between the colours (up). Each axis is stretched in two straight pieces
     so that its threshold sits in the middle; every point sits at its true value."""
@@ -1703,8 +1706,8 @@ def plot_pair_scorecard(card, confusable_below=DELTA_E_THRESHOLD, name_line=NAME
     # each pair: a disc split in two halves, one in each colour, labelled with both numbers
     pts = [[fx(r.distinct), fy(min(r.dE00, top)), int(r.a), int(r.b)] for _, r in ok.iterrows()]
     ax_w, ax_h = fig.get_figwidth() * 0.80, fig.get_figheight() * 0.70        # the plotting area, in inches
-    rx = 0.034; ry = rx * ax_w / ax_h                                          # round on screen
-    W, H = 2 * rx * 1.12, 2 * ry + 0.055                                        # a point and its label
+    rx = 0.039; ry = rx * ax_w / ax_h                                          # round on screen
+    W, H = 2 * rx * 1.12, 2 * ry * 1.08                                         # a point, its numbers inside
     orig = [p_[0] for p_ in pts]
     for _ in range(300):                       # push overlapping points apart sideways; heights stay true
         moved = False
@@ -1727,13 +1730,16 @@ def plot_pair_scorecard(card, confusable_below=DELTA_E_THRESHOLD, name_line=NAME
             ax.add_patch(mpl.patches.Polygon(np.column_stack([cx + rx * np.cos(th), y + ry * np.sin(th)]),
                                              closed=True, fc=col, ec="none", zorder=3))
         ax.add_patch(mpl.patches.Ellipse((cx, y), 2 * rx, 2 * ry, fc="none", ec=SURROUND, lw=1.2, zorder=4))
-        ax.text(cx, y - ry - 0.01, f"{i}–{j}", ha="center", va="top", fontsize=9.5, fontweight="bold", color=INK, zorder=5)
+        for num, col, side in ((i, SDG.hex[i], -1), (j, SDG.hex[j], 1)):     # each colour's number in its own half
+            ax.text(cx + side * rx * 0.46, y, str(num), ha="center", va="center", fontsize=9.5 if num < 10 else 8.5,
+                    fontweight="bold", color=_ink_on(col), zorder=5)
     ax.set_xlim(0, 1); ax.set_ylim(0, 1)
-    ax.set_xticks([fx(v) for v in (0, 0.35, name_line, 0.85, 1)], ["0\nsame name", "0.35", f"{name_line:g}", "0.85", "1\nunrelated"])
     from matplotlib.ticker import MaxNLocator
     ticks = [t for t in MaxNLocator(4, integer=True).tick_values(confusable_below, top) if confusable_below < t <= top]
     ys = sorted(set(ticks) | {0, confusable_below / 2, confusable_below})
     ax.set_yticks([fy(t) for t in ys], [f"{t:g}" for t in ys])
+    ax.set_xticks([fx(v) for v in (0, name_line / 2, name_line, (1 + name_line) / 2, 1)],
+                  ["0\nsame name", f"{name_line / 2:g}", f"{name_line:g}", f"{(1 + name_line) / 2:g}", "1\nunrelated"])
     ax.spines["left"].set_color(INK); ax.spines["bottom"].set_color(INK)
     ax.set_xlabel("Name distinctiveness between the two names (1 − the Spinner's name similarity)")
     ax.set_ylabel("ΔE₀₀ between the two colours")
@@ -1742,8 +1748,8 @@ def plot_pair_scorecard(card, confusable_below=DELTA_E_THRESHOLD, name_line=NAME
             f"as seen at {cond.lower()}" if cond.startswith("Age") else f"as seen with {cond.lower()}")
     _titles(ax, "Colour identity scorecard",
             f"Each point is a pair of your test colours (the same pairs as section 4's table). Names: {card.attrs['language']}. "
-            f"ΔE₀₀ {seen}. Dashed lines: ΔE₀₀ {confusable_below:g} and name distinctiveness {name_line:g}, as alike as a top "
-            f"synonym; each axis is stretched so its threshold sits in the middle."
+            f"ΔE₀₀ {seen}. Dashed lines: ΔE₀₀ {confusable_below:g} and name similarity {1 - name_line:g} (name distinctiveness "
+            f"{name_line:g}); each axis is stretched so its threshold sits in the middle."
             + (" Points that would overlap are moved sideways; their heights are exact." if nudged else ""))
     plt.tight_layout(); plt.show()
 
@@ -2327,7 +2333,7 @@ def error_summary(pal, languages, threshold):
                "consistently off; a large one means it gets some names right and others badly wrong.")
 
 # ── Part C: grounding ─────────────────────────────────────────────────────
-def show_grounded(pal, languages):
+def show_grounded(pal, languages, title="Your grounded palette"):
     """The grounded palette. From Part B: one row per test colour, like the other grids; otherwise per language."""
     def status(r):
         return (pill(f"renamed from {r.renamed_from}", "mid") if isinstance(r.get("renamed_from"), str) else
@@ -2355,7 +2361,7 @@ def show_grounded(pal, languages):
             rows.append([framed(SDG.hex[i], str(i))] + cells)
         head = ["Your test palette"] + [(f"<b style='color:{INK}'>{_h(l)}</b> (you)" if role.get(l) == "your language" else _h(l))
                                         for l in langs]
-        show("<b>Your grounded palette</b>")
+        show(f"<b>{_h(title)}</b>")
         table(head, rows, valign="top", note=note)
         return
     rows = []
@@ -2365,7 +2371,7 @@ def show_grounded(pal, languages):
         cells = "".join(f'<div style="display:inline-block;margin:0 16px 10px 0;vertical-align:top">{cell(r)}</div>'
                         for _, r in p.iterrows())
         rows.append([f"<b>{_h(lang)}</b>", cells])
-    show("<b>Your grounded palette</b>")
+    show(f"<b>{_h(title)}</b>")
     table(["Language", "Grounded palette"], rows, note=note)
 
 NOTICEABLE = 1.0       # ΔE₀₀ below this: two colours aren't noticeably different
@@ -2449,8 +2455,8 @@ def show_repairs(pal, threshold):
             change = f'{swatch(e["old"])} <span style="color:{MUTED}">→</span> {swatch(e["new"])}<br>{small(where)}'
             good = e["after"] >= (threshold if joint else NOTICEABLE)
             result = (pill(f'{e["before"]:.1f} → {e["after"]:.1f}', "good" if good else "mid") + " " +
-                      small("told apart at a glance by every viewer" if e["after"] >= threshold else
-                            "noticeably different, but not at a glance for every viewer" if e["after"] >= NOTICEABLE else
+                      small("told apart at a glance" if e["after"] >= threshold else
+                            "noticeably different, but not at a glance" if e["after"] >= NOTICEABLE else
                             "still not noticeably different"))
             what = f'<b>{_h(e["name"])}</b>'
         else:
@@ -2460,11 +2466,12 @@ def show_repairs(pal, threshold):
                      f'{_h(e["pair"][0])} & {_h(e["pair"][1])}<br>{small("closest pair, " + condition_label(e["condition"], " ").lower())}',
                      what, change, result])
     show("<b>Perceptual repairs</b>")
-    table(["Language", "Pair too close", "Colour changed", "Before → after", "Closest ΔE₀₀, worst-off viewer"], rows,
+    who = vision_phrase(pal.attrs["vision"]) if pal.attrs.get("vision") else "the worst-off viewer"
+    table(["Language", "Pair too close", "Colour changed", "Before → after", f"Closest ΔE₀₀, {who}"], rows,
           note=(f"Renaming and repair are chosen together, by trying every combination of allowed colours: each test colour may "
                 f"keep its colour, move to another colour of its name in the Spinner's Mapper (any within ΔE₀₀ {threshold:g} of the "
                 f"best example, or further if speakers would still give it that name), or take a synonym's best example if it shares "
-                f"a name. The best palette has no shared names, every pair at least ΔE₀₀ {threshold:g} apart for every viewer if "
+                f"a name. The best palette has every pair at least ΔE₀₀ {threshold:g} apart for the kind of vision you chose, if "
                 f"possible, and then the fewest and smallest changes.") if joint else
                (f"Each replacement is another tile of the same name in the Colour Spinner's Mapper, noticeably different from the name's "
                 f"best example but still close to it (ΔE₀₀ {NOTICEABLE:g}–{threshold:g}), chosen to separate the palette best for the "
@@ -2504,12 +2511,12 @@ def show_closest_pairs(pal, languages, threshold=DELTA_E_THRESHOLD, conditions=C
                   f'{swatch(simulate(b, c), 34, 24)}</div>')
             cells.append(f'{sw}{pill(f"{d:.1f}", "bad" if d < threshold else "good")} {small(_h(c))}')
         rows.append([f"<b>{_h(lang)}</b>"] + cells)
-    show("<b>Can every viewer still tell each palette's colours apart?</b>")
+    show("<b>" + (f"With {vision_phrase(conditions[0])}, can you tell each palette's colours apart?" if len(conditions) == 1
+                  else "Can every viewer still tell each palette's colours apart?") + "</b>")
     table(["Language", "AI palette", "Grounded palette"], rows, valign="top",
           note=f"For each palette: its two closest colours under the viewing condition where they are closest, as they "
-               f"look there, and the ΔE₀₀ between the simulated colours. Red: below {threshold:g}, a design tension "
-               f"for that viewer: give the pair a second cue, such as a pattern, label or icon. (Repair, above, only "
-               f"separates colours that aren't noticeably different for some viewer, below ΔE₀₀ {NOTICEABLE:g}.)")
+               f"look there, and the ΔE₀₀ between the simulated colours. Red: below {threshold:g}. A pair still red after "
+               f"the repair can't be separated within its names: give it a second cue, such as a pattern, label or icon.")
 
 def plot_closest_pairs(check, threshold):
     if check is None: return
@@ -3970,5 +3977,57 @@ def optimise_palettes(pal, spinner, languages, threshold=DELTA_E_THRESHOLD, cond
     pal.attrs["joint"] = True
     return pal
 
-TOOLKIT_VERSION = "2026-10-28 16:33"
+
+# ── Part C, section 4 in three steps ──────────────────────────────────────
+def vision_phrase(v):
+    """'Typical' → 'typical colour vision', 'Deuteranopia' → 'deuteranopia', 'Age 60' → 'age 60'."""
+    return "typical colour vision" if v == "Typical" else v.lower()
+
+def ground_palette(pal, replace_when="Either", threshold=DELTA_E_THRESHOLD):
+    """Step 1: replace the AI's colour by speakers' best example wherever it's wrong. Starts afresh from
+    section 3's names every time, so the steps can be rerun in any order."""
+    pal = per_test_colour(undo_renames(pal))
+    pal = pal.drop(columns=["repaired_from"], errors="ignore")
+    too_far = [pd.isna(d) or d > threshold for d in pal.de00]
+    renamed = [isinstance(n, str) and not same_name(n, m, r)
+               for n, m, r in zip(pal.get("rt_name", pd.Series(None, index=pal.index)), pal.name,
+                                  pal.get("romanized", pd.Series(None, index=pal.index)))]
+    rule = {"Either": [a or b for a, b in zip(too_far, renamed)],
+            "Too far from the best example": too_far,
+            "Speakers would use a different name": renamed}[replace_when]
+    pal["grounded_hex"] = [best if isinstance(best, str) and r else ai
+                           for ai, best, r in zip(pal.ai_hex, pal.spinner_hex, rule)]
+    pal["replaced"] = pal.grounded_hex != pal.ai_hex
+    pal.attrs.pop("repairs", None); pal.attrs.pop("renames", None)
+    return pal
+
+def name_palette(pal, spinner, languages):
+    """Step 2: test colours that share a name get different names (a close synonym's best example)."""
+    out = rename_shared_names(pal, spinner, languages, conditions=["Typical"])
+    if out.attrs.get("renames"):
+        show_renames(out)
+    else:
+        show("<b>No test colours share a name</b> " + small("in any of your languages, so nothing needed renaming."))
+    return out
+
+def repair_for(pal, spinner, languages, vision="Typical", threshold=DELTA_E_THRESHOLD):
+    """Step 3: separate colours that look alike for one kind of vision, within their names. Only that kind of
+    vision is used: the palette is corrected for the viewer you choose."""
+    cond = [vision]
+    try:
+        out = optimise_palettes(pal, spinner, languages, threshold, conditions=cond)
+    except Exception as err:
+        show(small(f"Choosing step by step instead ({err})."))
+        out = repair_palettes(pal, spinner, languages, threshold, conditions=cond)
+    out.attrs["vision"] = vision
+    if out.attrs.get("repairs"):
+        show_repairs(out, threshold)
+    else:
+        show(f"<b>No repairs needed</b> " + small(f"for {vision_phrase(vision)}: "
+             f"every pair is already ΔE₀₀ {threshold:g} or more apart, or no colour of the same name would help."))
+    show_closest_pairs(out, languages, threshold, conditions=cond)
+    show_grounded(out, languages, title=f"Your final palette, corrected for {vision_phrase(vision)}")
+    return out
+
+TOOLKIT_VERSION = "2026-10-29 13:30"
 print(f"Toolkit ready ✓  version {TOOLKIT_VERSION}  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))
