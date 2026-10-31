@@ -646,11 +646,11 @@ class SheetSpinner:
 
 
 def norm(s):
-    """Compare colour names ignoring case, accents, spacing and punctuation
-    (Κόκκινο == κοκκινο; ς == σ)."""
+    """Compare colour names ignoring case, accents, spaces, hyphens and punctuation
+    (Κόκκινο == κοκκινο; ς == σ; svetlozelena == Svetlo zelena == light-blue → lightblue)."""
     s = unicodedata.normalize("NFD", str(s).strip().casefold()).replace("ς", "σ")
     s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
-    return re.sub(r"\s+", " ", re.sub(r"[^\w\s-]", "", s)).strip()
+    return re.sub(r"[\W_]+", "", s)
 
 def name_variants(text):
     """'kokkino (κόκκινο)' -> ['kokkino', 'κόκκινο']: the name and anything in brackets,
@@ -4333,5 +4333,5 @@ def show_nearest_sdg(pal, languages, threshold=DELTA_E_THRESHOLD):
                f"they can't be mistaken for that goal." if moved else
                "Every final colour is still closest to its own goal's colour.")
 
-TOOLKIT_VERSION = "2026-10-31 13:54"
+TOOLKIT_VERSION = "2026-10-31 14:36"
 print(f"Toolkit ready ✓  version {TOOLKIT_VERSION}  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))

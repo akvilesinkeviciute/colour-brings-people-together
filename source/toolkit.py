@@ -640,11 +640,11 @@ class SheetSpinner:
 
 
 def norm(s):
-    """Compare colour names ignoring case, accents, spacing and punctuation
-    (Κόκκινο == κοκκινο; ς == σ)."""
+    """Compare colour names ignoring case, accents, spaces, hyphens and punctuation
+    (Κόκκινο == κοκκινο; ς == σ; svetlozelena == Svetlo zelena == light-blue → lightblue)."""
     s = unicodedata.normalize("NFD", str(s).strip().casefold()).replace("ς", "σ")
     s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
-    return re.sub(r"\s+", " ", re.sub(r"[^\w\s-]", "", s)).strip()
+    return re.sub(r"[\W_]+", "", s)
 
 def name_variants(text):
     """'kokkino (κόκκινο)' -> ['kokkino', 'κόκκινο']: the name and anything in brackets,
