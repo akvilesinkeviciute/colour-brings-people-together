@@ -258,7 +258,7 @@ class ApiSpinner:
                 if hex_.upper() not in _NEARBY_SHOWN:
                     _NEARBY_SHOWN.add(hex_.upper())
                     show(f'<div class="note">The Colour Spinner had a server error for {hex_.upper()}, so it was looked up as '
-                         f'the indistinguishable {used} (ΔE₀₀ {de00(hex_, used):.1f}).</div>')
+                         f'the indistinguishable {used} (ΔE₀₀ = {de00(hex_, used):.1f}).</div>')
             # The Namer gives a Latin spelling only for some languages. When the Translator is set to
             # the same language it names the same word, so its Latin spelling can stand in.
             if (not res.get("romanized") or norm(res["romanized"]) == norm(res["name"])) and target == language \
@@ -655,13 +655,31 @@ def name_variants(text):
     parts = [main] + [p.strip() for chunk in inner for p in re.split(r"[,/;]", chunk)]
     return [p for p in dict.fromkeys(parts) if p]
 
+HIMBA_TERMS = {"burou", "dumbu", "grine", "serandu", "vapa", "vinde", "zoozu"}
+HIMBA_PREFIXES = ("otji", "ozo", "oru", "omu", "oma", "oka", "otu", "on", "om", "o", "e")
+
+def _himba_core(word):
+    """An OtjiHimba colour term without the noun-class prefix an AI often adds (otjiserandu, ondumbu → serandu,
+    dumbu). Only the Spinner's seven OtjiHimba terms are recognised, so other languages are unaffected."""
+    w = norm(word).replace("-", "").replace(" ", "")
+    if w in HIMBA_TERMS:
+        return w
+    for p in HIMBA_PREFIXES:
+        if w.startswith(p) and w[len(p):] in HIMBA_TERMS:
+            return w[len(p):]
+    return None
+
 def same_name(candidate, name, romanized=None):
     """True if `candidate` (in any script, with or without a bracketed romanisation)
-    is the Spinner's `name` or its romanised spelling."""
+    is the Spinner's `name` or its romanised spelling. For OtjiHimba's terms, a noun-class prefix the AI adds
+    (otjiserandu for serandu) doesn't count as a different name."""
     if not isinstance(candidate, str) or not isinstance(name, str):
         return False
     targets = {norm(name)} | ({norm(romanized)} if isinstance(romanized, str) and romanized else set())
-    return any(norm(v) in targets for v in name_variants(candidate))
+    if any(norm(v) in targets for v in name_variants(candidate)):
+        return True
+    core = _himba_core(name)
+    return core is not None and any(_himba_core(v) == core for v in name_variants(candidate))
 
 def try_call(fn, *a, **k):
     try:
@@ -826,6 +844,27 @@ def pill(text, kind="neutral"):
     bg, fg = {"good": _GOOD, "mid": _MID, "bad": _BAD}.get(kind, ("#ECECE8", INK))
     return f'<span class="badge" style="background:{bg};color:{fg}">{text}</span>'
 
+def _fit_to_window(*args, **kwargs):
+    """Show every open figure as a picture that shrinks to fit the window (Colab otherwise keeps plots at a fixed
+    size, so wide ones are cut off or scroll sideways on a small screen). Sharp on high-resolution screens too."""
+    import base64
+    for num in plt.get_fignums():
+        fig = plt.figure(num)
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=200, bbox_inches="tight", facecolor=fig.get_facecolor())
+        plt.close(fig)
+        png = buf.getvalue()
+        w_px = int.from_bytes(png[16:20], "big") * 100 // 200       # its natural width, at Colab's usual 100 dpi
+        display(HTML(f'<img src="data:image/png;base64,{base64.b64encode(png).decode()}" '
+                     f'style="width:{w_px}px;max-width:100%;height:auto" alt="">'))
+
+try:                                                   # in a notebook, every plt.show() fits the window
+    from IPython import get_ipython
+    if get_ipython() is not None:
+        plt.show = _fit_to_window
+except Exception:
+    pass
+
 def show(html_body):
     display(HTML(_CSS + f'<div class="cbt">{html_body}</div>'))
 
@@ -879,7 +918,7 @@ def show_babel(table, languages, labels=None, first=""):
          f'<div class="note">Lighter bars: below {LOW_CONFIDENCE:.0%} confidence, where speakers often use other names too.</div>')
 
 _GOOD, _MID, _BAD = ("#DDEFE3", "#14532D"), ("#FBF0D0", "#6B4E00"), ("#F9DADA", "#7F1D1D")
-DELTA_E_THRESHOLD = 5       # ΔE₀₀: the one threshold used throughout the masterclass
+DELTA_E_THRESHOLD = 10      # ΔE₀₀: the threshold used throughout the masterclass, in Part B and Part C
 HARD_TO_NAME = 0.5          # naming confidence below this counts as hard to name
 LOW_CONFIDENCE = 0.5        # in the names table, bars below this are drawn lighter
 
@@ -889,7 +928,7 @@ def sim_phrase(condition):
     if condition.startswith("Age"): return f"colours simulated for {condition.lower()}"
     return f"{condition.lower()}-simulated colours"
 
-def de_badge(d, threshold, small_is_good=True, prefix=""):
+def de_badge(d, threshold, small_is_good=True, prefix="ΔE₀₀ = "):
     """ΔE₀₀ badge. small_is_good=True for 'how far off' (agreement);
     False for 'how far apart' (distinctiveness), where small is the risk."""
     if pd.isna(d): return '<span class="badge" style="background:#E4E4E0">n/a</span>'
@@ -914,7 +953,7 @@ def show_pairs(df, left="ai_hex", right="spinner_hex", lab_left="AI", lab_right=
             dist = small("n/a")
         else:
             col = "#B4342D" if d > threshold else ("#C9A227" if d > threshold / 2 else "#3E8E5E")
-            dist = f'<b>{d:.1f}</b>{bar(d / top, col, 160)}'
+            dist = f'<b>ΔE₀₀ = {d:.1f}</b>{bar(d / top, col, 160)}'
         rows.append([lang, f"<b>{_h(r['name'])}</b>", a, b, dist])
     table(["Language", "Name", lab_left, lab_right, "ΔE₀₀ between them"], rows,
           f"ΔE₀₀ ≈ 1 is just noticeable side by side; above {threshold:g} (red) the two read as different "

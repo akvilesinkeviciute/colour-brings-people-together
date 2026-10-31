@@ -264,7 +264,7 @@ class ApiSpinner:
                 if hex_.upper() not in _NEARBY_SHOWN:
                     _NEARBY_SHOWN.add(hex_.upper())
                     show(f'<div class="note">The Colour Spinner had a server error for {hex_.upper()}, so it was looked up as '
-                         f'the indistinguishable {used} (ΔE₀₀ {de00(hex_, used):.1f}).</div>')
+                         f'the indistinguishable {used} (ΔE₀₀ = {de00(hex_, used):.1f}).</div>')
             # The Namer gives a Latin spelling only for some languages. When the Translator is set to
             # the same language it names the same word, so its Latin spelling can stand in.
             if (not res.get("romanized") or norm(res["romanized"]) == norm(res["name"])) and target == language \
@@ -661,13 +661,31 @@ def name_variants(text):
     parts = [main] + [p.strip() for chunk in inner for p in re.split(r"[,/;]", chunk)]
     return [p for p in dict.fromkeys(parts) if p]
 
+HIMBA_TERMS = {"burou", "dumbu", "grine", "serandu", "vapa", "vinde", "zoozu"}
+HIMBA_PREFIXES = ("otji", "ozo", "oru", "omu", "oma", "oka", "otu", "on", "om", "o", "e")
+
+def _himba_core(word):
+    """An OtjiHimba colour term without the noun-class prefix an AI often adds (otjiserandu, ondumbu → serandu,
+    dumbu). Only the Spinner's seven OtjiHimba terms are recognised, so other languages are unaffected."""
+    w = norm(word).replace("-", "").replace(" ", "")
+    if w in HIMBA_TERMS:
+        return w
+    for p in HIMBA_PREFIXES:
+        if w.startswith(p) and w[len(p):] in HIMBA_TERMS:
+            return w[len(p):]
+    return None
+
 def same_name(candidate, name, romanized=None):
     """True if `candidate` (in any script, with or without a bracketed romanisation)
-    is the Spinner's `name` or its romanised spelling."""
+    is the Spinner's `name` or its romanised spelling. For OtjiHimba's terms, a noun-class prefix the AI adds
+    (otjiserandu for serandu) doesn't count as a different name."""
     if not isinstance(candidate, str) or not isinstance(name, str):
         return False
     targets = {norm(name)} | ({norm(romanized)} if isinstance(romanized, str) and romanized else set())
-    return any(norm(v) in targets for v in name_variants(candidate))
+    if any(norm(v) in targets for v in name_variants(candidate)):
+        return True
+    core = _himba_core(name)
+    return core is not None and any(_himba_core(v) == core for v in name_variants(candidate))
 
 def try_call(fn, *a, **k):
     try:
@@ -832,6 +850,27 @@ def pill(text, kind="neutral"):
     bg, fg = {"good": _GOOD, "mid": _MID, "bad": _BAD}.get(kind, ("#ECECE8", INK))
     return f'<span class="badge" style="background:{bg};color:{fg}">{text}</span>'
 
+def _fit_to_window(*args, **kwargs):
+    """Show every open figure as a picture that shrinks to fit the window (Colab otherwise keeps plots at a fixed
+    size, so wide ones are cut off or scroll sideways on a small screen). Sharp on high-resolution screens too."""
+    import base64
+    for num in plt.get_fignums():
+        fig = plt.figure(num)
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=200, bbox_inches="tight", facecolor=fig.get_facecolor())
+        plt.close(fig)
+        png = buf.getvalue()
+        w_px = int.from_bytes(png[16:20], "big") * 100 // 200       # its natural width, at Colab's usual 100 dpi
+        display(HTML(f'<img src="data:image/png;base64,{base64.b64encode(png).decode()}" '
+                     f'style="width:{w_px}px;max-width:100%;height:auto" alt="">'))
+
+try:                                                   # in a notebook, every plt.show() fits the window
+    from IPython import get_ipython
+    if get_ipython() is not None:
+        plt.show = _fit_to_window
+except Exception:
+    pass
+
 def show(html_body):
     display(HTML(_CSS + f'<div class="cbt">{html_body}</div>'))
 
@@ -885,7 +924,7 @@ def show_babel(table, languages, labels=None, first=""):
          f'<div class="note">Lighter bars: below {LOW_CONFIDENCE:.0%} confidence, where speakers often use other names too.</div>')
 
 _GOOD, _MID, _BAD = ("#DDEFE3", "#14532D"), ("#FBF0D0", "#6B4E00"), ("#F9DADA", "#7F1D1D")
-DELTA_E_THRESHOLD = 5       # ΔE₀₀: the one threshold used throughout the masterclass
+DELTA_E_THRESHOLD = 10      # ΔE₀₀: the threshold used throughout the masterclass, in Part B and Part C
 HARD_TO_NAME = 0.5          # naming confidence below this counts as hard to name
 LOW_CONFIDENCE = 0.5        # in the names table, bars below this are drawn lighter
 
@@ -895,7 +934,7 @@ def sim_phrase(condition):
     if condition.startswith("Age"): return f"colours simulated for {condition.lower()}"
     return f"{condition.lower()}-simulated colours"
 
-def de_badge(d, threshold, small_is_good=True, prefix=""):
+def de_badge(d, threshold, small_is_good=True, prefix="ΔE₀₀ = "):
     """ΔE₀₀ badge. small_is_good=True for 'how far off' (agreement);
     False for 'how far apart' (distinctiveness), where small is the risk."""
     if pd.isna(d): return '<span class="badge" style="background:#E4E4E0">n/a</span>'
@@ -920,7 +959,7 @@ def show_pairs(df, left="ai_hex", right="spinner_hex", lab_left="AI", lab_right=
             dist = small("n/a")
         else:
             col = "#B4342D" if d > threshold else ("#C9A227" if d > threshold / 2 else "#3E8E5E")
-            dist = f'<b>{d:.1f}</b>{bar(d / top, col, 160)}'
+            dist = f'<b>ΔE₀₀ = {d:.1f}</b>{bar(d / top, col, 160)}'
         rows.append([lang, f"<b>{_h(r['name'])}</b>", a, b, dist])
     table(["Language", "Name", lab_left, lab_right, "ΔE₀₀ between them"], rows,
           f"ΔE₀₀ ≈ 1 is just noticeable side by side; above {threshold:g} (red) the two read as different "
@@ -1110,13 +1149,13 @@ def _cell_grid(values, threshold, row_labels, title, subtitle, row_chip_colours=
             if np.isnan(v):
                 continue
             ink = "white" if v < 0.6 * threshold else INK
-            ax.text(c, r - (0.09 if neighbours is not None else 0), f"{v:.1f}", ha="center", va="center",
+            ax.text(c, r - (0.09 if neighbours is not None else 0), f"ΔE₀₀ = {v:.1f}", ha="center", va="center",
                     fontsize=12, fontweight="bold", color=ink)
             if neighbours is not None:
                 n = neighbours.iat[r, c]
                 seen = simulate(SDG.hex[n], cols[c])            # the neighbour as it looks under this condition
                 ax.add_patch(mpl.patches.Rectangle((c - 0.30, r + 0.13), 0.13, 0.15, fc=seen, ec="white", lw=0.8))
-                ax.text(c - 0.12, r + 0.205, f"vs {n}", ha="left", va="center", fontsize=8.5, color=ink)
+                ax.text(c - 0.12, r + 0.205, f"vs #{n}", ha="left", va="center", fontsize=8.5, color=ink)
     for c, name in enumerate(cols):
         ax.text(c, -0.68, condition_label(name), ha="center", va="center", fontsize=10, color=INK)
     ax.set_xlim(-0.5, nc - 0.5); ax.set_ylim(nr - 0.5, -0.95)
@@ -1139,16 +1178,53 @@ def _cell_grid(values, threshold, row_labels, title, subtitle, row_chip_colours=
     plt.show()
 
 def plot_nearest_neighbours(nn_de, nn_id, threshold):
+    """Each cell: the test colour and its nearest neighbour as that viewer sees them, side by side on the grey frame,
+    with the ΔE₀₀ between them as a badge underneath (green, amber, red as in the translatability grid). The colours
+    and the numbers are kept apart, so the ΔE₀₀ can't be mistaken for a test colour's number."""
     if nn_de is None: return
-    pick = list(nn_de.index)
+    pick, cols = list(nn_de.index), list(nn_de.columns)
+    nr, nc = nn_de.shape
     below = int((nn_de.values < threshold).sum())
-    _cell_grid(nn_de, threshold, [str(i) for i in pick],
-               "How close is each test colour to its nearest neighbour in your palette?",
-               f"Each cell: ΔE₀₀ between the simulated colours, i.e. between the test colour and its nearest other test colour, "
-               f"both simulated for that column (for example, ΔE₀₀ between deuteranopia-simulated colours). The small patch "
-               f"is that neighbour as it looks there. Red: closer than {threshold}, "
-               f"so easily confused ({below} of {nn_de.size} cells).",
-               row_chip_colours=[SDG.hex[i] for i in pick], neighbours=nn_id)
+    CW, RH = 1.55, 1.25                                    # a cell's width and a row's height, in inches
+    W, H = CW * nc + 1.5, RH * nr + 1.5
+    fig, ax = plt.subplots(figsize=(W, H))
+    ax.set_xlim(0, nc); ax.set_ylim(nr, -0.55); ax.axis("off")
+    for c, name in enumerate(cols):
+        ax.text(c + 0.5, -0.3, condition_label(name), ha="center", va="center", fontsize=10, color=INK)
+    for r, i in enumerate(pick):
+        for c, cond in enumerate(cols):
+            v, n = nn_de.iat[r, c], nn_id.iat[r, c]
+            if np.isnan(v):
+                continue
+            # the two colours, as this viewer sees them, in one grey frame
+            x0, y0, fw, fh = c + 0.08, r + 0.06, 0.84, 0.46
+            ax.add_patch(mpl.patches.FancyBboxPatch((x0, y0), fw, fh, boxstyle="round,pad=0,rounding_size=0.05", fc=SURROUND, ec="none"))
+            for k, h in enumerate((SDG.hex[i], SDG.hex[n])):
+                ax.add_patch(mpl.patches.Rectangle((x0 + 0.05 + k * (fw - 0.1) / 2, y0 + 0.06), (fw - 0.1) / 2 - 0.01, fh - 0.12,
+                                                   fc=simulate(h, cond), ec="none"))
+            # the ΔE₀₀ underneath, as a badge, and which neighbour it is
+            # green: 10 or more; yellow: 5 to 10; red: below 5
+            fc, ink = (("#DCEFE3", "#1E5A34") if v >= threshold else ("#FFF1A8", "#6B5600") if v >= threshold / 2
+                       else ("#F6D5D3", "#8E1B1B"))
+            ax.add_patch(mpl.patches.FancyBboxPatch((c + 0.04, r + 0.6), 0.6, 0.28, boxstyle="round,pad=0,rounding_size=0.12",
+                                                    fc=fc, ec="none"))
+            ax.text(c + 0.34, r + 0.745, f"ΔE₀₀ = {v:.1f}", ha="center", va="center", fontsize=9.5, fontweight="bold", color=ink)
+            ax.text(c + 0.68, r + 0.745, f"vs #{n}", ha="left", va="center", fontsize=9, color=MUTED)
+    import textwrap
+    sub = textwrap.fill(f"Each cell: the test colour (left) and its nearest other test colour (right), as that viewer sees them, "
+                        f"and the ΔE₀₀ between them. Below {threshold:g}, they're hard to tell apart at a glance "
+                        f"({below} of {nn_de.size} cells). Green: ΔE₀₀ {threshold:g} or more; yellow: {threshold / 2:g} to {threshold:g}; red: below {threshold / 2:g}. "
+                        f"#: the neighbour's test colour number.",
+                        width=int(W * 12.5))
+    ax.set_title("How close is each test colour to its nearest neighbour in your palette?", loc="left", pad=14 + 13 * (sub.count("\n") + 1))
+    ax.annotate(sub, xy=(0, 1), xycoords="axes fraction", xytext=(0, 8), textcoords="offset points", ha="left", va="bottom",
+                fontsize=9.5, color=MUTED, linespacing=1.3)
+    fig.tight_layout()
+    fig.subplots_adjust(left=max(fig.subplotpars.left, 1.3 / W))
+    ax.set_ylim(nr, -0.55)
+    for r, i in enumerate(pick):                           # the test colours' own numbers, on the left only
+        chip(ax, r + 0.29, SDG.hex[i], str(i), height_in=0.62)
+    plt.show()
 
 CONDITION_WHY = {
     "Typical": "They are close even with typical colour vision.",
@@ -1189,7 +1265,7 @@ def show_at_risk(nn_de, nn_id, threshold):
         also = [x for x in dict.fromkeys(x for x, _ in hits) if x != c]
         why = CONDITION_WHY.get(c, "") + (f" Also below the threshold: {', '.join(also)}." if also else "")
         rows.append([two("Typical"), two(c),
-                     f'<span style="white-space:nowrap"><b>{typical:.1f} → {d:.1f}</b></span><br>'
+                     f'<span style="white-space:nowrap"><b>ΔE₀₀ = {typical:.1f} → {d:.1f}</b></span><br>'
                      f'{small("between typical colours → between " + _h(sim_phrase(c)))}',
                      f'<span style="font-size:12.5px">{_h(why)}</span>'])
     show("<b>Pairs at risk, and why</b>")
@@ -1389,7 +1465,7 @@ def show_translatability(naming, pick, languages, threshold, source=None):
             r = sub[sub.language == lang]; b = best[lang]
             badge = ""
             if k > 0 and source and source in best:
-                badge = f'<div style="margin-top:5px">{de_badge(de00(best[source], b), threshold, prefix="ΔE₀₀ ")}</div>'
+                badge = f'<div style="margin-top:5px">{de_badge(de00(best[source], b), threshold, prefix="ΔE₀₀ = ")}</div>'
             cells += f'<td {td}>{chip(b, f"{esc(r.name.iloc[0])}<br>{b}")}{badge}</td>'
         rows += f'<tr><td {td}>{chip(SDG.hex[i], str(i), 15, True)}</td>{cells}</tr>'
     th = f'style="text-align:left;padding:0 14px 8px 0;font-weight:400;font-size:12px;white-space:nowrap;color:{MUTED}"'
@@ -1538,7 +1614,7 @@ def plot_name_map(naming, pick, languages):
     for i in pick:
         o = rgb_to_lab(SDG.hex[i])[1:]
         pts = [o] + [rgb_to_lab(b)[1:] for b in naming[(naming.sdg == i) & naming.best_example.notna()].best_example]
-        groups.append((f"Test colour {i}", o, pts))
+        groups.append((f"Test colour #{i}", o, pts))
     fig, axes = _panel_grid(groups, "Where each language's name pulls the test colour",
                             "CIELAB a*–b* plane, seen from above (lightness not shown). An arrow at the edge: that best "
                             "example lies further out.",
@@ -1733,7 +1809,7 @@ def plot_two_axes(card, confusable_below=DELTA_E_THRESHOLD, hard_below=HARD_TO_N
             ax.text(x + dx, y, str(i), ha="center", va="center", color=ink_on(SDG.hex[i]), fontweight="bold",
                     fontsize=12, zorder=4)
             if raw > top:
-                ax.text(x + dx, y + 0.035, f"↑ {raw:.0f}", ha="center", va="bottom", fontsize=8.5, color=MUTED, zorder=4)
+                ax.text(x + dx, y + 0.035, f"↑ ΔE₀₀ = {raw:.0f}", ha="center", va="bottom", fontsize=8.5, color=MUTED, zorder=4)
     ax.set_xlim(0, 1); ax.set_ylim(0, 1)
     if by_name:
         ax.set_xticks([fx(v) for v in (0, 0.35, hard_below, 0.85, 1)], ["0\nsame name", "0.35", f"{hard_below:g}", "0.85", "1\nunrelated"])
@@ -1781,7 +1857,7 @@ def scorecard_pairs(pick, naming, language, condition="Typical"):
     card.attrs.update(language=language, condition=condition)
     return card
 
-PART_B_THRESHOLD = 10       # ΔE₀₀: the threshold used throughout Part B (Part C uses DELTA_E_THRESHOLD, 5)
+PART_B_THRESHOLD = DELTA_E_THRESHOLD   # ΔE₀₀ 10, the same in Part B and Part C
 SCORECARD_DE = PART_B_THRESHOLD   # the scorecard's lines: ΔE₀₀ 10 between the two colours,
 SCORECARD_SIMILARITY = 0.5  # and name similarity 0.5 (name distinctiveness 0.5)
 
@@ -1806,7 +1882,7 @@ def plot_pair_scorecard(card, confusable_below=SCORECARD_DE, name_line=1 - SCORE
     for (x, y), col, label, ha, va in zones:
         ax.add_patch(mpl.patches.Rectangle((x, y), 0.5, 0.5, fc=col, ec="none", zorder=0))
         ax.text(x + (0.015 if ha == "left" else 0.485), y + (0.488 if va == "top" else 0.012), label,
-                ha=ha, va=va, fontsize=9, color="#7A7A75", zorder=1)
+                ha=ha, va=va, fontsize=10.5, fontweight="bold", color=INK, zorder=1)
     ax.axvline(0.5, color="#9A9A95", ls=(0, (4, 3)), lw=1.2, zorder=1)
     ax.axhline(0.5, color="#9A9A95", ls=(0, (4, 3)), lw=1.2, zorder=1)
     # each pair: a disc split in two halves, one in each colour, labelled with both numbers
@@ -1853,9 +1929,10 @@ def plot_pair_scorecard(card, confusable_below=SCORECARD_DE, name_line=1 - SCORE
     seen = ("with typical colour vision" if cond == "Typical" else
             f"as seen at {cond.lower()}" if cond.startswith("Age") else f"as seen with {cond.lower()}")
     _titles(ax, "Colour identity scorecard",
-            f"Each point is a pair of your test colours (the same pairs as section 4's table). Names: {card.attrs['language']}. "
-            f"ΔE₀₀ {seen}. Dashed lines: ΔE₀₀ {confusable_below:g} and name similarity {1 - name_line:g} (name distinctiveness "
-            f"{name_line:g}); each axis is stretched so its threshold sits in the middle."
+            f"Each disc is a pair of your test colours: its left half is one colour, its right half the other, with their numbers. "
+            f"Up: how different the two look (ΔE₀₀ between them, {seen.replace('with ', 'with ').replace('as seen ', '')}). "
+            f"Across: how differently their names are used in {card.attrs['language']} (0: the same name; 1: unrelated names). "
+            f"Dashed lines: ΔE₀₀ = {confusable_below:g} and name distinctiveness {name_line:g}; each axis is stretched so its line sits in the middle."
             + (" Points that would overlap are moved sideways; their heights are exact." if nudged else ""))
     plt.tight_layout(); plt.show()
 
@@ -1865,7 +1942,7 @@ def show_scorecard(card, top=40):
     langs = [c for c in card.columns if c not in ("dE00", "perceptual_0to1", "confidence_0to1")]
     rows = []
     for i, r in card.iterrows():
-        perc = f'<b>{r.dE00:.1f}</b>{bar(r.dE00 / top)}{small("to the nearest test colour")}'
+        perc = f'<b>ΔE₀₀ = {r.dE00:.1f}</b>{bar(r.dE00 / top)}{small("to the nearest test colour")}'
         conf = ("—" if pd.isna(r.confidence_0to1) else
                 f'<b>{r.confidence_0to1:.0%}</b>{bar(r.confidence_0to1)}{small("naming confidence")}')
         names = []
@@ -2170,7 +2247,7 @@ def show_name_comparison(cmp, threshold=DELTA_E_THRESHOLD, you=None):
             else:
                 where = ""
                 if isinstance(r.get("ai_best"), str):
-                    where = f' {swatch(r.ai_best, 22, 14)} {small(f"ΔE₀₀ {r.ai_drift:.1f}")}'
+                    where = f' {swatch(r.ai_best, 22, 14)} {small(f"ΔE₀₀ = {r.ai_drift:.1f}")}'
                 elif r.get("ai_status"):
                     where = " " + small(_h(r.ai_status))
                 ai = f'{pill("AI: " + _h(r.ai_name), "bad")}<div style="margin-top:4px">{where}</div>'
@@ -2210,9 +2287,9 @@ def load_names(source):
             if not up:
                 raise ValueError("No file was uploaded. Run this cell again and choose partB_results.csv, "
                                  "or set NamesFrom to 'Type them in'.")
-            partb = pd.read_csv(io.BytesIO(next(iter(up.values()))))
+            partb = pd.read_csv(io.BytesIO(next(iter(up.values()))), encoding="utf-8-sig")
         else:
-            partb = pd.read_csv("partB_results.csv")
+            partb = pd.read_csv("partB_results.csv", encoding="utf-8-sig")
         global _BY_SDG                                 # every (test colour, language, name), shared names included
         _BY_SDG = partb.dropna(subset=["name"])[["sdg", "language", "name"]].assign(
             language=lambda t: t.language.map(canonical_language)).reset_index(drop=True)
@@ -2337,7 +2414,7 @@ def show_comparison(pal, threshold):
         best = swatch(r.spinner_hex, 34, 24, "Speakers' best example") if isinstance(r.spinner_hex, str) else small("missing")
         pair = (f'<div style="display:flex;gap:8px;align-items:center;margin:5px 0 2px">{ai}{best}</div>'
                 f'<div style="display:flex;gap:8px;font-size:10.5px;color:{MUTED}"><span style="width:34px">AI</span><span>Speakers</span></div>')
-        d = de_badge(r.de00, threshold, prefix="ΔE₀₀ ") if not pd.isna(r.get("de00", np.nan)) else small("n/a")
+        d = de_badge(r.de00, threshold, prefix="ΔE₀₀ = ") if not pd.isna(r.get("de00", np.nan)) else small("n/a")
         if isinstance(r.get("rt_name"), str):
             ok = same_name(r.rt_name, r["name"], r.get("romanized"))
             rt = (f'<div style="font-size:11.5px;color:{MUTED};white-space:nowrap">The AI\'s colour is called</div>'
@@ -2398,7 +2475,7 @@ def plot_ai_vs_speakers(pal, languages, threshold):
         g = ok[ok.sdg == k] if by_sdg else ok[ok.language == k]
         pts = [rgb_to_lab(h)[1:] for h in pd.concat([g.ai_hex, g.spinner_hex])]
         centre = rgb_to_lab(SDG.hex[k])[1:] if by_sdg else np.mean(pts, axis=0)
-        groups.append((f"Names for test colour {k}" if by_sdg else k, centre, pts + [centre]))
+        groups.append((f"Names for test colour #{k}" if by_sdg else k, centre, pts + [centre]))
     langs = [l for l in languages if l in set(ok.language)]
     fig, axes = _panel_grid(groups, "From the AI's colour to the speakers' best example",
                             "CIELAB a*–b* plane, seen from above (lightness not shown). Outlined shape: the AI's colour. "
@@ -2422,20 +2499,20 @@ def plot_ai_vs_speakers(pal, languages, threshold):
 
 def error_summary(pal, languages, threshold):
     """Per language, and for all languages together: how far the AI's colours were from speakers' best
-    examples, as the mean ΔE₀₀ and its standard deviation (SD) across names, the worst, and how many are too far."""
+    examples, as the mean ΔE₀₀ and its standard deviation (SD) across names, and the worst."""
     ok = pal.dropna(subset=["ai_hex", "spinner_hex", "de00"])
     top = max(2 * threshold, float(ok.de00.max()) if len(ok) else 1)
     def row(label, g, bold=False):
         n_bad = int((g.de00 > threshold).sum())
-        sd = f"{g.de00.std(ddof=1):.1f}" if len(g) > 1 else "—"          # sample SD; one name has no spread
+        sd = f"SD = {g.de00.std(ddof=1):.1f}" if len(g) > 1 else "—"          # sample SD; one name has no spread
         name = f"<b>{label}</b>" if not bold else f"<b>{label}</b>"
-        return [name, f'<b>{g.de00.mean():.1f}</b>{bar(g.de00.mean() / top, None, 160)}', f"<b>{sd}</b>",
-                f"<b>{g.de00.max():.1f}</b>", pill(f"{n_bad} of {len(g)}", "bad" if n_bad else "good")]
+        return [name, f'<b>ΔE₀₀ = {g.de00.mean():.1f}</b>{bar(g.de00.mean() / top, None, 160)}', f"<b>{sd}</b>",
+                f"<b>ΔE₀₀ = {g.de00.max():.1f}</b>"]
     rows = [row(_h(l), ok[ok.language == l]) for l in languages if not ok[ok.language == l].empty]
     if len(rows) > 1:
         rows.append(row("All languages", ok, True))
     show("<b>Errors by language</b>")
-    table(["Language", "Mean ΔE₀₀", "SD", "Worst ΔE₀₀", f"Above {threshold:g}"], rows,
+    table(["Language", "Mean ΔE₀₀", "SD", "Worst ΔE₀₀"], rows,
           note="Mean and SD: the average ΔE₀₀ between the AI's colours and speakers' best examples, and how much it "
                "varies from name to name (standard deviation). A small SD means the AI is consistently close or "
                "consistently off; a large one means it gets some names right and others badly wrong.")
@@ -2445,7 +2522,7 @@ def show_grounded(pal, languages, title="Your grounded palette"):
     """The grounded palette. From Part B: one row per test colour, like the other grids; otherwise per language."""
     def status(r):
         return (pill(f"renamed from {r.renamed_from}", "mid") if isinstance(r.get("renamed_from"), str) else
-                pill("repaired", "mid") if isinstance(r.get("repaired_from"), str) else
+                pill("optimised", "mid") if isinstance(r.get("repaired_from"), str) else
                 pill("replaced", "mid") if r.replaced else pill("kept", "good"))
     def cell(r):
         ai = swatch(r.ai_hex, 26, 16, "AI's colour") if isinstance(r.ai_hex, str) else small("—")
@@ -2453,8 +2530,8 @@ def show_grounded(pal, languages, title="Your grounded palette"):
                 f'<div style="margin-top:6px">{status(r)} {small("AI:")} {ai}</div>')
     ok = pal[pal.grounded_hex.notna()]
     note = (f"{int(ok.replaced.sum())} of {len(ok)} colours differ from the AI's. kept: the AI's colour matched · "
-            "replaced: the speakers' best example · repaired: another colour of the same name, because it wasn't noticeably "
-            "different from another colour in the palette. The small swatch is the AI's original colour.")
+            "replaced: the speakers' best example · renamed: a close synonym, because two test colours shared a name · "
+            "optimised: another colour of the same name, to tell it apart from the palette's other colours. The small swatch is the AI's original colour.")
     if _BY_SDG is not None and len(_BY_SDG):
         get = _grounded_lookup(ok)
         role = dict(zip(pal.language, pal.get("role", pd.Series("", index=pal.index))))
@@ -2558,25 +2635,25 @@ def show_repairs(pal, threshold):
     for e in log:
         if "new" in e:
             where = (f"still {_h(e['name'])}: tile {e['tile']} of {e.get('of', 21)} in its Mapper, from the best to the worst example; "
-                     f"ΔE₀₀ {e['from_focal']:.1f} from the best example"
-                     if "tile" in e else f"ΔE₀₀ {e['from_focal']:.1f} from the best example")
+                     f"ΔE₀₀ = {e['from_focal']:.1f} from the best example"
+                     if "tile" in e else f"ΔE₀₀ = {e['from_focal']:.1f} from the best example")
             change = f'{swatch(e["old"])} <span style="color:{MUTED}">→</span> {swatch(e["new"])}<br>{small(where)}'
             good = e["after"] >= (threshold if joint else NOTICEABLE)
-            result = (pill(f'{e["before"]:.1f} → {e["after"]:.1f}', "good" if good else "mid") + " " +
+            result = (pill(f'ΔE₀₀ = {e["before"]:.1f} → {e["after"]:.1f}', "good" if good else "mid") + " " +
                       small("told apart at a glance" if e["after"] >= threshold else
                             "noticeably different, but not at a glance" if e["after"] >= NOTICEABLE else
                             "still not noticeably different"))
             what = f'<b>{_h(e["name"])}</b>'
         else:
             change, what = small("no colour of these names can be told apart at a glance"), "—"
-            result = pill(f'{e["before"]:.1f}', "bad") + " " + small("consider a second cue: a pattern, label or icon")
+            result = pill(f'ΔE₀₀ = {e["before"]:.1f}', "bad") + " " + small("consider a second cue: a pattern, label or icon")
         rows.append([f"<b>{_h(e['language'])}</b>",
                      f'{_h(e["pair"][0])} & {_h(e["pair"][1])}<br>{small("closest pair, " + condition_label(e["condition"], " ").lower())}',
                      what, change, result])
-    show("<b>Perceptual repairs</b>")
+    show("<b>Optimised colours</b>")
     who = vision_phrase(pal.attrs["vision"]) if pal.attrs.get("vision") else "the worst-off viewer"
     table(["Language", "Pair too close", "Colour changed", "Before → after", f"Closest ΔE₀₀, {who}"], rows,
-          note=(f"Renaming and repair are chosen together, by trying every combination of allowed colours: each test colour may "
+          note=(f"The colours are chosen by trying every combination of allowed colours: each test colour may "
                 f"keep its colour, move to another colour of its name in the Spinner's Mapper (any within ΔE₀₀ {threshold:g} of the "
                 f"best example, or further if speakers would still give it that name), or take a synonym's best example if it shares "
                 f"a name. The best palette has every pair at least ΔE₀₀ {threshold:g} apart for the kind of vision you chose, if "
@@ -2605,7 +2682,7 @@ def show_closest_pairs(pal, languages, threshold=DELTA_E_THRESHOLD, conditions=C
     closest, as they look there, with the ΔE₀₀ between the simulated colours. With `before` (the palette before
     the repair), the columns compare before and after the repair; otherwise the AI's palette and the grounded one."""
     from itertools import combinations
-    cols = ([("Before repair", before, "grounded_hex"), ("After repair", pal, "grounded_hex")] if before is not None else
+    cols = ([("Before optimising", before, "grounded_hex"), ("After optimising", pal, "grounded_hex")] if before is not None else
             [("AI palette", pal, "ai_hex"), ("Grounded palette", pal, "grounded_hex")])
     prefetch_simulations([h for _, d, c in cols for h in d[c] if isinstance(h, str)])
     rows = []
@@ -2619,14 +2696,14 @@ def show_closest_pairs(pal, languages, threshold=DELTA_E_THRESHOLD, conditions=C
                              for cc in conditions for x, y in combinations(hexes, 2))
             sw = (f'<div style="display:flex;gap:4px;margin-bottom:4px">{swatch(simulate(a, c), 34, 24)}'
                   f'{swatch(simulate(b, c), 34, 24)}</div>')
-            cells.append(f'{sw}{pill(f"{d:.1f}", "bad" if d < threshold else "good")} {small(_h(c))}')
+            cells.append(f'{sw}{pill(f"ΔE₀₀ = {d:.1f}", "bad" if d < threshold else "good")} {small(_h(c))}')
         rows.append([f"<b>{_h(lang)}</b>"] + cells)
     show("<b>" + (f"With {vision_phrase(conditions[0])}, can you tell each palette's colours apart?" if len(conditions) == 1
                   else "Can every viewer still tell each palette's colours apart?") + "</b>")
     table(["Language"] + [label for label, _, _ in cols], rows, valign="top",
           note=f"For each palette: its two closest colours under the viewing condition where they are closest, as they "
                f"look there, and the ΔE₀₀ between the simulated colours. Red: below {threshold:g}. A pair still red after "
-               f"the repair can't be separated within its names: give it a second cue, such as a pattern, label or icon.")
+               f"optimising can't be separated within its names: give it a second cue, such as a pattern, label or icon.")
 
 def plot_closest_pairs(check, threshold):
     if check is None: return
@@ -2650,7 +2727,7 @@ def show_grounded_conditions(pal, languages):
 # ── Part C: the grounded palette as a picture, in use, and in design-tool formats ──
 def _status(r):
     if isinstance(r.get("renamed_from"), str): return "renamed"
-    if isinstance(r.get("repaired_from"), str): return "repaired"
+    if isinstance(r.get("repaired_from"), str): return "optimised"
     return "replaced" if r.get("replaced") else "kept"
 
 def palette_card(pal, languages, path=None, title="Your grounded palette", display_it=True):
@@ -2695,8 +2772,8 @@ def palette_card(pal, languages, path=None, title="Your grounded palette", displ
         row += 1
     note = textwrap.fill("Each colour shows what speakers of that language mean by the name, from the Colour Spinner. "
                          "kept: the AI's colour matched · replaced: the speakers' best example · "
-                         "repaired: moved to another colour of the same name, because it wasn't noticeably different "
-                         "from another colour in the palette.", width=int(W * 0.95 * 15))
+                         "renamed: a close synonym, because two test colours shared a name · optimised: another colour of the same name, "
+                         "to tell it apart from the palette's other colours.", width=int(W * 0.95 * 15))
     ax.set_title(title, loc="left", fontsize=14, pad=12 + 12 * note.count("\n") + 12)
     ax.annotate(note, xy=(0, 1), xycoords="axes fraction", xytext=(0, 4), textcoords="offset points",
                 fontsize=8.5, color=MUTED, va="bottom", linespacing=1.3)
@@ -3424,7 +3501,7 @@ def export_palette(pal, languages, stem="grounded_palette"):
     previews = sorted(glob.glob("preview_*.png"))
     if previews:
         files += previews; rows.append(["<code>preview_….png</code>", "The designs you previewed in section 5"])
-    export.round(2).to_csv(f"{stem}.csv", index=False)
+    export.round(2).to_csv(f"{stem}.csv", index=False, encoding="utf-8-sig")
     files.append(f"{stem}.csv"); rows.append([f"<code>{stem}.csv</code>", "Every test colour in every language: grounded hex code, status, and the evidence"])
     if _BY_SDG is not None and len(_BY_SDG):
         full_rows = []
@@ -3434,7 +3511,7 @@ def export_palette(pal, languages, stem="grounded_palette"):
             for i, (lab, h, f) in enumerate(zip(labels, hexes, flags), 1):
                 full_rows.append({"language": lang, "sdg": i, "goal": SDG.goal[i], "hex": h,
                                   "source": "grounded" if f else "UN", "name": lab.split(" ", 1)[1] if f else ""})
-        pd.DataFrame(full_rows).to_csv("grounded_sdg_palette.csv", index=False)
+        pd.DataFrame(full_rows).to_csv("grounded_sdg_palette.csv", index=False, encoding="utf-8-sig")
         files.append("grounded_sdg_palette.csv")
         rows.append(["<code>grounded_sdg_palette.csv</code>", "All 17 SDG colours for each audience, with your test colours grounded"])
     with zipfile.ZipFile(f"{stem}.zip", "w") as z:
@@ -3463,7 +3540,7 @@ def show_finding(pal, name=""):
   <div style="display:flex;gap:12px;flex:1;background:{SURROUND};padding:12px;border-radius:8px">
     {sw(row.ai_hex, "AI", "estimate")}{sw(row.spinner_hex, "Speakers", "best example")}
   </div>
-  <div style="color:{MUTED};font-size:14px">ΔE₀₀<br><b style="font-size:34px;color:{INK}">{row.de00:.1f}</b></div>
+  <div style="color:{MUTED};font-size:14px">ΔE₀₀ =<br><b style="font-size:34px;color:{INK}">{row.de00:.1f}</b></div>
 </div>
 {rt_line}
 <p style="margin:0 0 8px">Talk it through with your partner, or think it through if you're working on your own:</p>
@@ -3514,7 +3591,7 @@ def save_finding(pal, name="", pattern="", designer_fix="", stem="my_finding"):
         ax.add_patch(mpl.patches.FancyBboxPatch((x, 1.0), 1.75, 1.0, boxstyle="round,pad=0,rounding_size=0.05", fc=hex_, ec="none"))
         ax.text(x + 0.1, 1.85, "AI" if k == 0 else "Speakers", fontsize=11, fontweight="bold", color=_ink_on(hex_))
         ax.text(x, 2.3, f"{lab} · {hex_}", fontsize=8.5, color="white")
-    ax.text(4.65, 1.3, "ΔE₀₀", fontsize=10, color="white"); ax.text(4.65, 1.95, f"{row.de00:.1f}", fontsize=24, fontweight="bold", color="white")
+    ax.text(4.65, 1.3, "ΔE₀₀ =", fontsize=10, color="white"); ax.text(4.65, 1.95, f"{row.de00:.1f}", fontsize=24, fontweight="bold", color="white")
     y = 2.95
     if data["speakers_call_ai_colour"]:
         ax.text(0.3, y, f"Speakers would call the AI's colour “{data['speakers_call_ai_colour']}”"
@@ -3573,7 +3650,7 @@ def _full_check(pal, p, language, vision, threshold):
             d = de00(sim(corrected[i]), sim(corrected[j]))
             if d < threshold and de00(sim(original[i]), sim(original[j])) >= threshold:
                 why = (f"both are now <i>{_h(named[i])}</i>" if norm(named[i]) == norm(named[j]) else "they are now close")
-                notes.append(f"<b>{i} and {j}</b>: {why}, ΔE₀₀ {d:.1f} apart, though the originals were distinct.")
+                notes.append(f"<b>#{i} and #{j}</b>: {why}, ΔE₀₀ = {d:.1f} apart, though the originals were distinct.")
                 arcs.append((i, j, d, False))
     near = {}
     for i in tests:
@@ -3584,9 +3661,9 @@ def _full_check(pal, p, language, vision, threshold):
                 near.setdefault((corrected[i], j), []).append((i, d))
                 arcs.append((i, j, d, True))
     for (hex_, j), hits in near.items():
-        ids = " and ".join(str(i) for i, _ in hits)
+        ids = " and ".join(f"#{i}" for i, _ in hits)
         verb = "is" if len(hits) == 1 else "are"
-        notes.append(f"<b>{ids}</b> (<i>{_h(named[hits[0][0]])}</i>) {verb} now ΔE₀₀ {hits[0][1]:.1f} from the unchanged SDG colour <b>{j}</b>.")
+        notes.append(f"<b>{ids}</b> (<i>{_h(named[hits[0][0]])}</i>) {verb} now ΔE₀₀ = {hits[0][1]:.1f} from the unchanged SDG colour <b>#{j}</b>.")
     old, old_notes, seen = [], [], set()          # already close in the UN palette, and still close now
     for i in tests:
         for j in original:
@@ -3595,7 +3672,7 @@ def _full_check(pal, p, language, vision, threshold):
             if d_now < threshold and de00(sim(original[i]), sim(original[j])) < threshold:
                 seen.add(tuple(sorted((i, j))))
                 old.append((i, j, d_now, False))
-                old_notes.append(f"{min(i, j)} and {max(i, j)} (ΔE₀₀ {d_now:.1f})")
+                old_notes.append(f"#{min(i, j)} and #{max(i, j)} (ΔE₀₀ = {d_now:.1f})")
     return original, corrected, named, changed, arcs, old, notes, old_notes
 
 @needs_simulations()
@@ -3787,7 +3864,7 @@ def show_repair_journey(pal, language, path=None):
         rows.append((i, r, before))
     if not rows:
         show(small(f"No grounded colours for {_h(language)} yet: run section 4 first.")); return
-    steps = ["Test colour", "AI's colour", "Speakers' best example", "Grounded", "After repair"]
+    steps = ["Test colour", "AI's colour", "Speakers' best example", "Grounded", "Optimised"]
     fig, ax = plt.subplots(figsize=(12.5, 1.15 * len(rows) + 1.4)); ax.axis("off")
     ax.set_xlim(0, 12.5); ax.set_ylim(1.15 * len(rows) + 0.9, -0.2)
     xs = [1.3 + k * 2.35 for k in range(5)]
@@ -3808,18 +3885,18 @@ def show_repair_journey(pal, language, path=None):
             rt = f" · speakers: {r.rt_name}" if isinstance(r.get("rt_name"), str) else ""
             chip(xs[1], y, r.ai_hex, "AI", f"{r.ai_hex}{rt}")
         if isinstance(r.spinner_hex, str):
-            chip(xs[2], y, r.spinner_hex, "Speakers", f"{r.spinner_hex} · ΔE₀₀ {r.de00:.1f} from the AI" if not pd.isna(r.get("de00")) else r.spinner_hex)
+            chip(xs[2], y, r.spinner_hex, "Speakers", f"{r.spinner_hex} · ΔE₀₀ = {r.de00:.1f} from the AI" if not pd.isna(r.get("de00")) else r.spinner_hex)
         chip(xs[3], y, before, "replaced" if before != r.ai_hex else "kept", before)
         repaired = isinstance(r.get("repaired_from"), str)
-        chip(xs[4], y, r.grounded_hex, "repaired" if repaired else "unchanged",
-             f"{r.grounded_hex} · ΔE₀₀ {de00(r.grounded_hex, r.spinner_hex):.1f} from the best example" if repaired else r.grounded_hex,
+        chip(xs[4], y, r.grounded_hex, "optimised" if repaired else "unchanged",
+             f"{r.grounded_hex} · ΔE₀₀ = {de00(r.grounded_hex, r.spinner_hex):.1f} from the best example" if repaired else r.grounded_hex,
              edge=INK if repaired else None)
         for x in xs[:-1]:
             ax.annotate("", xy=(x + 2.32, y + 0.35), xytext=(x + 1.55, y + 0.35),
                         arrowprops=dict(arrowstyle="-|>", color="#9A9A95", lw=1, mutation_scale=9))
     log = [e for e in pal.attrs.get("repairs", []) if e.get("language") == language]
-    note = ("Repairs: " + "; ".join(f"{e['name']} {e['old']} → {e['new']}: closest pair ΔE₀₀ {e['before']:.1f} → {e['after']:.1f} "
-                                    f"({condition_label(e['condition'], ' ').lower()})" for e in log if "new" in e)) if log else "No repairs were needed."
+    note = ("Optimised: " + "; ".join(f"{e['name']} {e['old']} → {e['new']}: closest pair ΔE₀₀ = {e['before']:.1f} → {e['after']:.1f} "
+                                    f"({condition_label(e['condition'], ' ').lower()})" for e in log if "new" in e)) if log else "No colours needed optimising."
     ax.text(0.1, 1.15 * len(rows) + 0.55, note, fontsize=8.5, color=MUTED, va="top", wrap=True)
     fig.suptitle(f"From test colours to the final palette · {language}", x=0.02, ha="left", fontsize=13, fontweight="bold")
     plt.tight_layout()
@@ -3870,7 +3947,7 @@ def _spinner_name(spinner, language, latin):
 def rename_shared_names(pal, spinner, languages, top=SYNONYMS_TO_TRY, conditions=CONDITIONS):
     """Where two test colours share a name in a language (6 and 14, both Burou), the later one is renamed.
     Its synonyms (its top Thesaurus synonyms, from the Spinner's name similarity) are tried from the most similar
-    down, and it takes the first whose best example is at least ΔE₀₀ 5 from the palette's other colours for the
+    down, and it takes the first whose best example is at least the threshold (ΔE₀₀ 10) from the palette's other colours for the
     worst-off viewer; if none is, the one that comes closest. Its colour becomes that synonym's best example.
     Names already in the palette aren't used again."""
     pal = pal.copy()
@@ -3942,17 +4019,17 @@ def show_renames(pal):
     for e in log:
         if e.get("new"):
             rows.append([f"<b>{_h(e['language'])}</b>", framed(SDG.hex[e["sdg"]], str(e["sdg"])),
-                         f"<i>{_h(e['old'])}</i>, like test colour {e['shared_with']}",
+                         f"<i>{_h(e['old'])}</i>, like #{e['shared_with']}",
                          f"<b>{_h(e['new'])}</b> {swatch(e['hex'])}<br>{small('a synonym of ' + _h(e['old']) + ', similarity ' + format(e['similarity'], '.2f'))}",
-                         pill(f"ΔE₀₀ {e['nearest']:.1f}", "good" if e["nearest"] >= DELTA_E_THRESHOLD else "mid") + " " +
-                         small((f"to test colour {e['nearest_sdg']} ({_h(e['nearest_name'])}), the nearest"
+                         pill(f"ΔE₀₀ = {e['nearest']:.1f}", "good" if e["nearest"] >= DELTA_E_THRESHOLD else "mid") + " " +
+                         small((f"to #{e['nearest_sdg']} ({_h(e['nearest_name'])}), the nearest"
                                 if e.get("nearest_sdg") is not None else "to the nearest other colour") + ", " +
                                ("with " + vision_phrase(e["vision"]) if e.get("vision") else "for the worst-off viewer"))])
         else:
             rows.append([f"<b>{_h(e['language'])}</b>", framed(SDG.hex[e["sdg"]], str(e["sdg"])),
-                         f"<i>{_h(e['old'])}</i>, like test colour {e['shared_with']}", small("not renamed: " + e["why"]),
+                         f"<i>{_h(e['old'])}</i>, like #{e['shared_with']}", small("not renamed: " + e["why"]),
                          pill("same name", "bad") + " " + small("consider a second cue: a pattern, label or icon")])
-    show("<b>Naming repairs: test colours that shared a name</b>")
+    show("<b>Renamed: test colours that shared a name</b>")
     table(["Language", "Test colour", "Name it shared", "Renamed to", "Now"], rows,
           note=f"Two test colours with the same name would be confused when people talk about them, however different they look. "
                f"The later one gets a different name: the most similar synonym of the shared name (among its top {SYNONYMS_TO_TRY} in the "
@@ -4149,9 +4226,8 @@ def repair_for(pal, spinner, languages, vision="Typical", threshold=DELTA_E_THRE
     if out.attrs.get("repairs"):
         show_repairs(out, threshold)
     else:
-        show(f"<b>No repairs needed</b> " + small(f"for {vision_phrase(vision)}: "
-             f"every pair is already ΔE₀₀ {threshold:g} or more apart, or no colour of the same name would help."))
-    show_closest_pairs(out, languages, threshold, conditions=cond, before=pal)
+        show(f"<b>No colours needed optimising</b> " + small(f"for {vision_phrase(vision)}: "
+             f"every pair is already ΔE₀₀ = {threshold:g} or more apart, or no colour of the same name would help."))
     show_grounded(out, languages, title=f"Your final palette, corrected for {vision_phrase(vision)}")
     return out
 
@@ -4220,5 +4296,37 @@ def build_offline_cache(subset=DEFAULT_SUBSET, languages=ALL_LANGUAGES_7, path="
          f"{len(out['sims'])} simulations")
     return path
 
-TOOLKIT_VERSION = "2026-10-29 18:24"
+
+def show_nearest_sdg(pal, languages, threshold=DELTA_E_THRESHOLD):
+    """Step 4: each final colour matched to its nearest of the UN's 17 SDG colours (ΔE₀₀, typical vision). Grounding
+    and optimising can move a colour so far that it now looks more like another goal's colour than its own."""
+    get = _grounded_lookup(pal)
+    tests = list(dict.fromkeys(_BY_SDG.sdg.astype(int))) if _BY_SDG is not None and len(_BY_SDG) else []
+    langs = [l for l in languages if (pal.language == l).any()]
+    if not tests or not langs:
+        show(small("This step needs the names from Part B.")); return
+    rows, moved = [], 0
+    for i in tests:
+        cells = []
+        for l in langs:
+            t = _BY_SDG[(_BY_SDG.sdg == i) & (_BY_SDG.language == l)]
+            r = get(l, i, t["name"].iloc[0]) if not t.empty else None
+            if r is None or not isinstance(r.grounded_hex, str):
+                cells.append(small("—")); continue
+            d = {k: de00(r.grounded_hex, h) for k, h in SDG.hex.items()}
+            k = min(d, key=d.get)
+            own = k == i
+            moved += not own
+            badge = pill(f"#{k} · ΔE₀₀ = {d[k]:.1f}", "good" if own else "mid")
+            note = small("still closest to its own goal") if own else small(f"now closer to #{k} than to #{i} (ΔE₀₀ = {d[i]:.1f})")
+            cells.append(f'{framed(r.grounded_hex, r["name"], 104, 50, 12)}<div style="margin-top:6px">{badge}<br>{note}</div>')
+        rows.append([framed(SDG.hex[i], f"#{i}", 84, 50, 12)] + cells)
+    show("<b>Which SDG colour is each of your colours closest to?</b>")
+    table(["Your test colour"] + [_h(l) for l in langs], rows, valign="top",
+          note=f"Each final colour, matched to the nearest of the UN's 17 SDG colours (ΔE₀₀, typical colour vision). "
+               f"{moved} of your colours now look more like another goal's colour than their own: in a design, check that "
+               f"they can't be mistaken for that goal." if moved else
+               "Every final colour is still closest to its own goal's colour.")
+
+TOOLKIT_VERSION = "2026-10-31 13:16"
 print(f"Toolkit ready ✓  version {TOOLKIT_VERSION}  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))

@@ -8,8 +8,8 @@ You'll use the [Colour Spinner](https://colornaming.net/spinner) to test how wel
 
 | Part | What you'll do | Time | |
 |---|---|---|---|
-| **B** | Audit the UN SDG palette on two axes: can people tell the colours apart, and do they agree on what they're called? | 45 min | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/akvilesinkeviciute/colour-brings-people-together/blob/v1.0/Part_B_Audit_the_SDG_palette.ipynb) |
-| **C** | Ask an AI for the colour of each name, check it against speakers' data, and build a palette grounded in evidence | 60 min | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/akvilesinkeviciute/colour-brings-people-together/blob/v1.0/Part_C_Ground_an_AI_palette.ipynb) |
+| **B** | Audit the UN SDG palette on two axes: can people tell the colours apart, and do they agree on what they're called? | 60 min | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/akvilesinkeviciute/colour-brings-people-together/blob/v1.0/Part_B_Audit_the_SDG_palette.ipynb) |
+| **C** | Ask an AI for the colour of each name, check it against speakers' data, and build a palette grounded in evidence | 45 min | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/akvilesinkeviciute/colour-brings-people-together/blob/v1.0/Part_C_Ground_an_AI_palette.ipynb) |
 
 Part A, the *Colours of Babel* card game, needs no laptop.
 
