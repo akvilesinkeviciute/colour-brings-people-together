@@ -2468,15 +2468,7 @@ def export_palette(pal, languages, stem="final_palette"):
     files.append(f"{stem}_card.png"); rows.append([f"<code>{stem}_card.png</code>", "Your final palette, by test colour and language, as on screen"])
     if corrected_sdg_card(pal, languages, "final_sdg_palette.png"):
         files.append("final_sdg_palette.png")
-        rows.append(["<code>final_sdg_palette.png</code>", "Overview: the full SDG palette, optimised for every language"])
-        made = 0
-        for lang in languages:
-            for v in dict.fromkeys(["Typical", _LAST_FULL_VIEW.get(lang, "Typical")]):
-                fn = f"final_sdg_{lang.replace(' ', '_')}_{v.replace(' ', '_').lower()}.png"
-                if try_call(full_palette_picture, pal, lang, v, fn):
-                    files.append(fn); made += 1
-        if made:
-            rows.append(["<code>final_sdg_…png</code>", "Section 6 for each language, with its arcs and notes: typical vision, plus the vision you chose there"])
+        rows.append(["<code>final_sdg_palette.png</code>", "The full SDG palette with your final colours, for every language"])
     previews = sorted(glob.glob("preview_*.png"))
     if previews:
         files += previews; rows.append(["<code>preview_….png</code>", "The designs you previewed in section 5"])
@@ -2500,32 +2492,26 @@ def export_palette(pal, languages, stem="final_palette"):
     table(["File", "What it is"], rows)
     download(f"{stem}.zip")
 
-def show_finding(pal, name=""):
+def show_finding(pal, language=None):
+    """The most striking finding in one language: the name whose AI colour was furthest from speakers' best example."""
     cand = pal.dropna(subset=["de00"])
-    if cand.empty: return
-    match = cand[cand.name.map(norm) == norm(name)] if name else cand.iloc[:0]
-    row = match.iloc[0] if len(match) else cand.loc[cand.de00.idxmax()]
-    rt_line = ""
-    if isinstance(row.get("rt_name"), str):
-        rt_line = (f'<p style="margin:0 0 10px">Speakers would call the AI\'s colour '
-                   f'<b>{esc(row.rt_name)}</b> ({row.rt_conf:.0%} confidence).</p>')
+    if language is not None:
+        cand = cand[cand.language == language]
+    if cand.empty:
+        show(small("No names to compare in this language.")); return
+    row = cand.loc[cand.de00.idxmax()]
     def sw(hex_, label, cap):
         return (f'<div style="flex:1"><div style="background:{hex_};color:{ink_on(hex_)};height:92px;border-radius:5px;'
                 f'display:flex;align-items:flex-end;padding:8px 10px;font-weight:700;font-size:16px">{label}</div>'
                 f'<div style="color:#fff;font-size:12px;margin-top:6px">{cap} · {hex_}</div></div>')
     show(f"""<div class="card" style="max-width:640px">
 <h3>“{esc(row['name'])}” in {esc(row.language)}</h3>
-<div style="display:flex;gap:18px;align-items:center;margin:12px 0">
+<div style="display:flex;gap:18px;align-items:center;margin:12px 0 0">
   <div style="display:flex;gap:12px;flex:1;background:{SURROUND};padding:12px;border-radius:8px">
     {sw(row.ai_hex, "AI", "estimate")}{sw(row.spinner_hex, "Speakers", "best example")}
   </div>
   <div style="color:{MUTED};font-size:14px">ΔE₀₀ =<br><b style="font-size:34px;color:{INK}">{row.de00:.1f}</b></div>
 </div>
-{rt_line}
-<p style="margin:0 0 8px">Talk it through with your partner, or think it through if you're working on your own:</p>
-<p style="margin:0 0 4px"><b>What pattern of failure does this reveal?</b> Did the AI default to a Western-centric focal colour,
-collapse a distinction the language maintains, or produce a colour that fails for colour vision deficiency or ageing?</p>
-<p style="margin:0"><b>What would a designer need to do differently</b> to avoid it in their own practice?</p>
 </div>""")
 
 
@@ -3215,14 +3201,9 @@ def repair_for(pal, spinner, languages, vision="Typical", threshold=DELTA_E_THRE
         show(small(f"Choosing step by step instead ({err})."))
         out = repair_palettes(pal, spinner, languages, threshold, conditions=cond)
     out.attrs["vision"] = vision
-    if out.attrs.get("repairs"):
-        pass
-    else:
-        show(f"<b>No colours needed optimising</b> " + small(f"for {vision_phrase(vision)}: "
-             f"every pair is already ΔE₀₀ = {threshold:g} or more apart, or no colour of the same name would help."))
-    show_step_palette(out, pal, languages, f"Step 3 · Your palette, optimised for {vision_phrase(vision)}", "optimised · look",
-                      note="Optimised colours moved to another example of the same name, to be told apart from the palette's "
-                           "other colours by this viewer. This is your final palette.")
+    prefetch_simulations([h for p_ in (pal, out) for h in p_.grounded_hex if isinstance(h, str)], [vision])
+    _vision_grid(out, pal, languages, vision)
+    _why_vision(out, pal, spinner, languages, vision, threshold)
     if out.attrs.get("repairs"):
         _details("Details: what moved, and how far", show_repairs, out, threshold)
     return out
@@ -3629,7 +3610,8 @@ def show_ai_grid(pal, languages, threshold=DELTA_E_THRESHOLD):
                 f"name · ✗ they would call it something else (shown), with the Namer's confidence.",
                 langs, tests, cell, "AI", "speakers", note="A name that two test colours share appears in both rows.")
 
-def show_step_palette(pal, before, languages, title, change_label, unchanged_label="unchanged", extra=None, note="", count=True):
+def show_step_palette(pal, before, languages, title, change_label, unchanged_label="unchanged", extra=None, note="", count=True,
+                      vision="Typical"):
     """Every step of section 4: before (left) and after (right) for each test colour and language, and what changed.
     `before` is the palette before the step, or "ai" for the AI's own colours."""
     tests, langs = _tests_and_langs(pal, languages)
@@ -3648,7 +3630,8 @@ def show_step_palette(pal, before, languages, title, change_label, unchanged_lab
         changed[0] += moved
         label = change_label(bn, r) if callable(change_label) else change_label
         line = pill(label, "mid") if moved else (small(unchanged_label) if unchanged_label else "")
-        return bh, bn, r.grounded_hex, r["name"], line
+        see = (lambda h: simulate(h, vision)) if vision != "Typical" else (lambda h: h)
+        return (see(bh) if isinstance(bh, str) else bh), bn, see(r.grounded_hex), r["name"], line
     left = "AI" if isinstance(before, str) and before == "ai" else "before"
     html = _captured(_split_grid, title, "", langs, tests, cell, left, "after", note="")   # the count is known only afterwards
     lead = ((f"{changed[0]} colour{'s' if changed[0] != 1 else ''} changed in this step. " if changed[0] else "Nothing changed in this step. ")
@@ -3671,3 +3654,124 @@ def show_nearest_sdg(pal, languages, threshold=DELTA_E_THRESHOLD):
     _split_grid("Step 4 · Which SDG colour is each of your colours closest to?",
                 "own goal: still closest to its own goal's colour · closer to #k: it now looks more like another goal's colour, "
                 "so it could be mistaken for that goal in a design.", langs, tests, cell, "final", "nearest SDG")
+
+
+def _why_vision(out, before, spinner, languages, vision, threshold=DELTA_E_THRESHOLD):
+    """For each language: the closest pair of colours for this viewer, before and after Step 3, and why it did or
+    didn't change: nothing to fix, optimised, no example of these names separates them, or the Mapper didn't answer."""
+    from itertools import combinations
+    rows = []
+    for l in [x for x in languages if (out.language == x).any()]:
+        def closest(p):
+            r = p[(p.language == l) & p.grounded_hex.apply(lambda h: isinstance(h, str))]
+            pairs = [(de00(simulate(a.grounded_hex, vision), simulate(b.grounded_hex, vision)), a, b)
+                     for (_, a), (_, b) in combinations(r.iterrows(), 2)]
+            return min(pairs, key=lambda t: t[0]) if pairs else None
+        try:
+            c0, c1 = closest(before), closest(out)
+        except SimulationUnavailable:
+            rows.append([f"<b>{_h(l)}</b>", "—", small("The Colour Spinner's simulations didn't answer; run the cell again in a minute.")]); continue
+        if c0 is None: continue
+        d0, a, b = c0; d1 = c1[0]
+        pair = f"#{int(a.sdg)} <i>{_h(a['name'])}</i> and #{int(b.sdg)} <i>{_h(b['name'])}</i>"
+        if d0 >= threshold:
+            why = small(f"Nothing to fix: even the closest pair, {pair}, is ΔE₀₀ = {d0:.1f} apart for this viewer.")
+            badge = pill("already distinct", "good")
+        elif d1 >= threshold:
+            why = small(f"{pair} looked alike (ΔE₀₀ = {d0:.1f}); now the closest pair is ΔE₀₀ = {d1:.1f} apart.")
+            badge = pill("optimised", "good")
+        else:
+            tiles = [len(safe(spinner.category_members, x["name"], l) or []) for x in (a, b)]
+            if max(tiles) <= 1:
+                why = small(f"{pair} look alike (ΔE₀₀ = {d0:.1f}), but the Colour Spinner's Mapper didn't give other examples of these "
+                            "names. Run the cell again in a minute.")
+                badge = pill("no answer", "mid")
+            else:
+                why = small(f"{pair} look alike (ΔE₀₀ = {d1:.1f}), and no other example of these names separates them: "
+                            "give them a second cue, such as a pattern, label or icon.")
+                badge = pill("second cue", "bad")
+        rows.append([f"<b>{_h(l)}</b>", badge, why])
+    if rows:
+        table(["Language", f"For {vision_phrase(vision)}", "Why"], rows, valign="top",
+              note=f"Step 3 changes a colour only when two colours look alike to this viewer (closer than ΔE₀₀ {threshold:g}), and "
+                   "only to another example of the same name.")
+
+
+def _vision_grid(out, before, languages, vision):
+    """Step 3's grid: for each test colour and language, your final colour (left) and the same colour as a viewer with
+    this vision sees it (right), from the Spinner's simulations. The line underneath says whether it was optimised."""
+    tests, langs = _tests_and_langs(out, languages)
+    if not tests or not langs: return
+    changed = [0]
+    def cell(l, i):
+        r, b = _row(out, l, i), _row(before, l, i)
+        if r is None or not isinstance(r.grounded_hex, str): return None
+        try:
+            seen = simulate(r.grounded_hex, vision)
+        except SimulationUnavailable:
+            return r.grounded_hex, r["name"], "#FFFFFF", "?", small("simulation unavailable")
+        moved = b is not None and isinstance(b.grounded_hex, str) and b.grounded_hex.upper() != r.grounded_hex.upper()
+        changed[0] += moved
+        if moved:
+            was = (f'<span style="display:inline-block;width:26px;height:14px;vertical-align:middle;border:2px solid #777;'
+                   f'border-radius:3px;background:{b.grounded_hex}"></span>')
+            line = pill("optimised · look", "mid") + " " + small("was") + " " + was
+        else:
+            line = small("unchanged")
+        return r.grounded_hex, r["name"], seen, "", line
+    viewer = vision_phrase(vision)
+    html = _captured(_split_grid, f"Step 3 · Your final palette, and how a viewer with {viewer} sees it", "",
+                     langs, tests, cell, "your colour", viewer)
+    lead = (f"{changed[0]} colour{'s' if changed[0] != 1 else ''} optimised for this viewer. " if changed[0]
+            else "No colour needed changing for this viewer. ")
+    note = (lead + f"Left: your final colour; right: the same colour as a viewer with {viewer} sees it (the Colour Spinner's "
+            "simulation). Optimised colours moved to another example of the same name, so that this viewer can tell them apart; "
+            "'was' shows the colour before.")
+    show("".join(html) + f'<div class="note">{_h(note)}</div>')
+
+
+def check_vision(pal, languages, vision="Deuteranopia"):
+    """Step 3, a check: the final palette with typical colour vision (left) and as a viewer with another kind of vision
+    sees it (right), from the Colour Spinner's simulations. Nothing changes."""
+    tests, langs = _tests_and_langs(pal, languages)
+    if not tests or not langs:
+        show(small("This step needs the names from Part B.")); return pal
+    viewer = vision_phrase(vision)
+    if vision != "Typical":
+        prefetch_simulations([h for h in pal.grounded_hex if isinstance(h, str)], [vision])
+    def cell(l, i):
+        r = _row(pal, l, i)
+        if r is None or not isinstance(r.grounded_hex, str): return None
+        try:
+            seen = simulate(r.grounded_hex, vision)
+        except SimulationUnavailable:
+            return r.grounded_hex, r["name"], "#FFFFFF", "?", small("simulation unavailable; run the cell again in a minute")
+        return r.grounded_hex, r["name"], seen, "", ""
+    _split_grid(f"Step 3 · How your palette looks with {viewer}", "", langs, tests, cell, "typical vision", viewer,
+                note=f"Left: your final colour with typical colour vision; right: the same colour as a viewer with {viewer} sees it "
+                     "(the Colour Spinner's simulation). Colours that look alike on the right need a second cue, such as a "
+                     "pattern, a label or an icon.")
+    return pal
+
+
+def show_final_palette(pal, language, vision="Typical"):
+    """Section 6: the full SDG palette with the test colours replaced by their final colours for one language, as a
+    viewer with the chosen vision sees it; then the same palette in colour space."""
+    final = {}
+    for _, r in pal[pal.language == language].iterrows():
+        if isinstance(r.get("grounded_hex"), str) and r.get("sdg") == r.get("sdg"):
+            final[int(r.sdg)] = (r.grounded_hex, r["name"])
+    if not final:
+        show(f"<b>No final colours for {_h(language)} yet.</b> " + small("Run section 4 first.")); return
+    hexes = [final[i][0] if i in final else h for i, h in SDG.hex.items()]
+    if vision != "Typical":
+        try:
+            prefetch_simulations(hexes, [vision]); hexes = [simulate(h, vision) for h in hexes]
+        except SimulationUnavailable:
+            show(small(f"The Colour Spinner didn't answer in time, so this shows typical colour vision, not {vision.lower()}.")); vision = "Typical"
+    seen = "" if vision == "Typical" else f", as seen with {vision_phrase(vision)}"
+    show(f"<b>The full SDG palette, with your final colours for {_h(language)}{_h(seen)}</b>")
+    show_palette(hexes, labels=[f"{i}" for i in SDG.index],
+                 captions=[(f"{final[i][1]} (yours)" if i in final else SDG_SHORT[i]) for i in SDG.index],
+                 note="Your test colours are replaced by your final colours; the others are the UN's.")
+    plot_sdg_plane(pal, language, vision)
