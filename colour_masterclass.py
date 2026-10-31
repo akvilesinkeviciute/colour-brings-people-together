@@ -3490,41 +3490,32 @@ def _by_test_colour(pal, languages):
     return out.sort_values(["language", "sdg"], key=lambda c: c.map(order) if c.name == "language" else c).reset_index(drop=True)
 
 def export_palette(pal, languages, stem="final_palette"):
-    """Pictures of the palettes and the data behind them, zipped for one download."""
+    """One zip: the final palette as a picture, its colour codes in every language (a CSV table, one row per test colour
+    and language), and every preview made in section 6."""
     import zipfile, glob
-    cols = ["language", "name", "grounded_hex", "ai_hex", "spinner_hex", "de00", "rt_name", "rt_conf",
-            "replaced", "repaired_from", "sdg", "sdg_hex"]
-    export = _by_test_colour(pal, languages)
-    if export is None:
-        export = pal[[c for c in cols if c in pal.columns]]
     files, rows = [], []
-    palette_card(pal, languages, path=f"{stem}_card.png", display_it=False)
-    files.append(f"{stem}_card.png"); rows.append([f"<code>{stem}_card.png</code>", "Your final palette, by test colour and language, as on screen"])
-    if corrected_sdg_card(pal, languages, "final_sdg_palette.png"):
-        files.append("final_sdg_palette.png")
-        rows.append(["<code>final_sdg_palette.png</code>", "The full SDG palette with your final colours, for every language"])
-    previews = sorted(glob.glob("preview_*.png"))
+    palette_card(pal, languages, path=f"{stem}.png", display_it=False)
+    files.append(f"{stem}.png"); rows.append([f"<code>{stem}.png</code>", "Your final palette, by test colour and language"])
+    tests = list(dict.fromkeys(_BY_SDG.sdg.astype(int))) if _BY_SDG is not None and len(_BY_SDG) else []
+    codes = []
+    for l in [x for x in languages if (pal.language == x).any()]:
+        for i in tests:
+            r = _row(pal, l, i)
+            if r is not None and isinstance(r.grounded_hex, str):
+                codes.append({"test colour": i, "SDG goal": SDG.goal[i], "SDG hex": SDG.hex[i], "language": l,
+                              "name": r["name"], "hex": r.grounded_hex.upper()})
+    pd.DataFrame(codes).to_csv(f"{stem}.csv", index=False, encoding="utf-8-sig")
+    files.append(f"{stem}.csv"); rows.append([f"<code>{stem}.csv</code>", "The colour codes of your final palette, in every language"])
+    previews = sorted(f for f in glob.glob("preview_*.png") if "_all17" not in f)
     if previews:
-        files += previews; rows.append(["<code>preview_….png</code>", "The designs you previewed in section 5"])
-    export.round(2).to_csv(f"{stem}.csv", index=False, encoding="utf-8-sig")
-    files.append(f"{stem}.csv"); rows.append([f"<code>{stem}.csv</code>", "Every test colour in every language: final hex code, status, and the evidence"])
-    if _BY_SDG is not None and len(_BY_SDG):
-        full_rows = []
-        for lang in languages:
-            if pal[(pal.language == lang) & pal.grounded_hex.notna()].empty: continue
-            labels, hexes, flags = full_sdg_palette(pal, lang)
-            for i, (lab, h, f) in enumerate(zip(labels, hexes, flags), 1):
-                full_rows.append({"language": lang, "sdg": i, "goal": SDG.goal[i], "hex": h,
-                                  "source": "final" if f else "UN", "name": lab.split(" ", 1)[1] if f else ""})
-        pd.DataFrame(full_rows).to_csv("final_sdg_palette.csv", index=False, encoding="utf-8-sig")
-        files.append("final_sdg_palette.csv")
-        rows.append(["<code>final_sdg_palette.csv</code>", "All 17 SDG colours for each audience, with your final test colours"])
+        files += previews; rows.append(["<code>preview_….png</code>", f"The {len(previews)} previews you made in section 6"])
     with zipfile.ZipFile(f"{stem}.zip", "w") as z:
         for fn in files:
             z.write(fn)
     show("<b>In the download</b>")
     table(["File", "What it is"], rows)
     download(f"{stem}.zip")
+
 
 def show_finding(pal, language=None):
     """The most striking finding in one language: the name whose AI colour was furthest from speakers' best example."""
@@ -4035,7 +4026,7 @@ def show_renames(pal):
                f"Spinner's Thesaurus) whose best example can be told apart at a glance from your other colours (ΔE₀₀ {DELTA_E_THRESHOLD:g} "
                f"or more with typical colour vision); if none can, the one that comes closest. The synonym goes to whichever of the two "
                f"test colours it is closer to, so the lighter test colour gets the lighter name. Every colour stays the best example of its "
-               f"name. Step 3 then checks other kinds of vision.")
+               f"name. Section 5 then shows how the palette looks to other kinds of vision.")
 
 
 def undo_renames(pal):
@@ -4512,7 +4503,7 @@ def _spread_labels(xy, gap=5.5, width=34, rounds=200):
         if not moved: break
     return ys
 
-def plot_sdg_plane(pal=None, language=None, vision="Typical"):
+def plot_sdg_plane(pal=None, language=None, vision="Typical", only_tests=False):
     """The 17 SDG colours on the CIELAB a*–b* plane, seen from above, labelled with their goals. With a Part C palette
     and a language: the other goals faded, and an arrow from each test colour's UN colour to its final colour. With a
     vision other than typical, every colour is shown as that viewer sees it (the Spinner's simulations), like the
@@ -4536,11 +4527,13 @@ def plot_sdg_plane(pal=None, language=None, vision="Typical"):
     _lab_axes(ax)
     pts = {i: (float(l[1]), float(l[2])) for i, l in labs.items()}
     fin = {i: (float(rgb_to_lab(h)[1]), float(rgb_to_lab(h)[2])) for i, (h, _) in final.items()}
-    keys = [("g", i) for i in pts] + [("f", i) for i in fin]              # goals' labels and final colours' labels together
+    keys = [("g", i) for i in pts if not (only_tests and final and i not in final)] + [("f", i) for i in fin]              # goals' labels and final colours' labels together
     ys = _spread_labels([pts[i] if k == "g" else fin[i] for k, i in keys], gap=5.5, width=40)
     label_y = {i: y for (k, i), y in zip(keys, ys) if k == "g"}
     final_y = {i: y for (k, i), y in zip(keys, ys) if k == "f"}
     for i, (a, b) in pts.items():
+        if only_tests and final and i not in final:
+            continue
         faded = bool(final) and i not in final
         ax.scatter(a, b, s=90 if faded else 150, color=see(SDG.hex[i]), edgecolor="white", linewidth=1.2,
                    alpha=0.35 if faded else 1, zorder=3)
@@ -4558,16 +4551,18 @@ def plot_sdg_plane(pal=None, language=None, vision="Typical"):
             ax.plot([a1 + 1.5, a1 + 3.4], [b1, final_y[i]], color=MUTED, lw=0.7, zorder=6)
         ax.text(a1 + 3.6, final_y[i], f"#{i} {name}", ha="left", va="center", fontsize=10.5, fontweight="bold", color=INK, zorder=7,
                 bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="none", alpha=0.9))
-    allx = [a for a, _ in pts.values()] + [float(rgb_to_lab(h)[1]) for h, _ in final.values()]
-    ally = [b for _, b in pts.values()] + [float(rgb_to_lab(h)[2]) for h, _ in final.values()]
+    shown_pts = {i: v for i, v in pts.items() if not (only_tests and final and i not in final)}
+    allx = [a for a, _ in shown_pts.values()] + [float(rgb_to_lab(h)[1]) for h, _ in final.values()]
+    ally = [b for _, b in shown_pts.values()] + [float(rgb_to_lab(h)[2]) for h, _ in final.values()]
     ax.set_xlim(min(allx) - 10, max(allx) + 38); ax.set_ylim(min(ally) - 12, max(ally) + 12)
     ax.grid(color="#EFEFEC", lw=0.8); ax.set_axisbelow(True)
     for sp in ("top", "right"): ax.spines[sp].set_visible(False)
     if final:
         _titles(ax, f"Where your test colours moved, in {language}" + ("" if vision == "Typical" else f", as seen with {vision_phrase(vision)}"),
                 ("" if vision == "Typical" else f"Every colour as a viewer with {vision_phrase(vision)} would see it, as in the palettes above. ") +
-                "The UN's 17 SDG colours on the CIELAB a*–b* plane, seen from above (lightness not shown). Arrows: from each "
-                "test colour's UN colour (its number) to your final colour (its number and name). The other goals are faded.")
+                ("Your test colours" if only_tests else "The UN's 17 SDG colours") + " on the CIELAB a*–b* plane, seen from above (lightness not shown). Arrows: from each "
+                "test colour's UN colour (its number) to your final colour (its number and name)." +
+                ("" if only_tests else " The other goals are faded."))
     else:
         _titles(ax, "The 17 SDG colours in colour space",
                 "The CIELAB a*–b* plane, seen from above (lightness not shown): reds and greens lie at opposite ends across, "
@@ -4789,26 +4784,34 @@ def check_vision(pal, languages, vision="Deuteranopia"):
 
 
 def show_final_palette(pal, language, vision="Typical"):
-    """Section 6: the full SDG palette with the test colours replaced by their final colours for one language, as a
-    viewer with the chosen vision sees it; then the same palette in colour space."""
+    """Section 5: your final palette for one language. With typical vision, plain swatches; with another kind of vision,
+    each swatch is split: typical vision on the left, as that viewer sees it on the right (the Spinner's simulation).
+    Then the same colours in colour space, as that viewer sees them, with arrows from each test colour's UN colour."""
+    tests = list(dict.fromkeys(_BY_SDG.sdg.astype(int))) if _BY_SDG is not None and len(_BY_SDG) else []
     final = {}
     for _, r in pal[pal.language == language].iterrows():
         if isinstance(r.get("grounded_hex"), str) and r.get("sdg") == r.get("sdg"):
             final[int(r.sdg)] = (r.grounded_hex, r["name"])
-    if not final:
+    order = [i for i in tests if i in final] or list(final)
+    if not order:
         show(f"<b>No final colours for {_h(language)} yet.</b> " + small("Run section 4 first.")); return
-    hexes = [final[i][0] if i in final else h for i, h in SDG.hex.items()]
-    if vision != "Typical":
+    hexes = [final[i][0] for i in order]
+    if vision == "Typical":
+        show(f"<b>Your final palette for {_h(language)}</b>")
+        show_palette(hexes, labels=[f"#{i}" for i in order], captions=[final[i][1] for i in order])
+    else:
         try:
-            prefetch_simulations(hexes, [vision]); hexes = [simulate(h, vision) for h in hexes]
+            prefetch_simulations(hexes, [vision]); seen = [simulate(h, vision) for h in hexes]
         except SimulationUnavailable:
-            show(small(f"The Colour Spinner didn't answer in time, so this shows typical colour vision, not {vision.lower()}.")); vision = "Typical"
-    seen = "" if vision == "Typical" else f", as seen with {vision_phrase(vision)}"
-    show(f"<b>The full SDG palette, with your final colours for {_h(language)}{_h(seen)}</b>")
-    show_palette(hexes, labels=[f"{i}" for i in SDG.index],
-                 captions=[(f"{final[i][1]} (yours)" if i in final else SDG_SHORT[i]) for i in SDG.index],
-                 note="Your test colours are replaced by your final colours; the others are the UN's.")
-    plot_sdg_plane(pal, language, vision)
+            show(small(f"The Colour Spinner didn't answer in time; run the cell again in a minute to see {vision.lower()}."))
+            return
+        viewer = vision_phrase(vision)
+        tiles = "".join(f'<div style="display:inline-block;margin:0 14px 10px 0;vertical-align:top">{_split(h, f"#{i}", sh, "")}'
+                        f'<div style="margin-top:4px">{small(_h(final[i][1]))}</div></div>' for i, h, sh in zip(order, hexes, seen))
+        show(f"<b>Your final palette for {_h(language)}, and how a viewer with {_h(viewer)} sees it</b>"
+             f'<div style="margin:2px 0 8px">{small(f"Each swatch: typical vision on the left, {viewer} on the right. Colours that look alike on the right need a second cue, such as a pattern, a label or an icon.")}</div>'
+             f"<div>{tiles}</div>")
+    plot_sdg_plane(pal, language, vision, only_tests=True)
 
-TOOLKIT_VERSION = "2026-10-31 21:06"
+TOOLKIT_VERSION = "2026-10-31 22:17"
 print(f"Toolkit ready ✓  version {TOOLKIT_VERSION}  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))
