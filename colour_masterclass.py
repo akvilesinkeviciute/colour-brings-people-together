@@ -2530,8 +2530,8 @@ def error_summary(pal, languages, threshold):
                "consistently off; a large one means it gets some names right and others badly wrong.")
 
 # ── Part C: grounding ─────────────────────────────────────────────────────
-def show_grounded(pal, languages, title="Your grounded palette"):
-    """The grounded palette. From Part B: one row per test colour, like the other grids; otherwise per language."""
+def show_grounded(pal, languages, title="Your final palette"):
+    """The final palette. From Part B: one row per test colour, like the other grids; otherwise per language."""
     def status(r):
         return (pill(f"renamed from {r.renamed_from}", "mid") if isinstance(r.get("renamed_from"), str) else
                 pill("optimised · look", "mid") if isinstance(r.get("repaired_from"), str) else
@@ -2570,7 +2570,7 @@ def show_grounded(pal, languages, title="Your grounded palette"):
                         for _, r in p.iterrows())
         rows.append([f"<b>{_h(lang)}</b>", cells])
     show(f"<b>{_h(title)}</b>")
-    table(["Language", "Grounded palette"], rows, note=note)
+    table(["Language", "Final palette"], rows, note=note)
 
 NOTICEABLE = 1.0       # ΔE₀₀ below this: two colours aren't noticeably different
 
@@ -2678,7 +2678,7 @@ def show_repairs(pal, threshold):
 
 @needs_simulations()
 def closest_pairs(pal, languages, conditions=CONDITIONS):
-    """For each language: the smallest ΔE₀₀ between any two of its colours, AI vs grounded."""
+    """For each language: the smallest ΔE₀₀ between any two of its colours, AI vs final."""
     from itertools import combinations
     def min_pair(hexes, c):
         hs = [simulate(h, c) for h in hexes if isinstance(h, str)]
@@ -2686,7 +2686,7 @@ def closest_pairs(pal, languages, conditions=CONDITIONS):
     prefetch_simulations([h for h in pd.concat([pal.ai_hex, pal.grounded_hex]) if isinstance(h, str)])
     rows = [{"language": l, "palette": v, **{c: min_pair(pal[pal.language == l][col].tolist(), c)
                                               for c in conditions}}
-            for l in languages for v, col in [("AI", "ai_hex"), ("Grounded", "grounded_hex")]]
+            for l in languages for v, col in [("AI", "ai_hex"), ("Final", "grounded_hex")]]
     return pd.DataFrame(rows).set_index(["language", "palette"])
 
 @needs_simulations()
@@ -2696,7 +2696,7 @@ def show_closest_pairs(pal, languages, threshold=DELTA_E_THRESHOLD, conditions=C
     the repair), the columns compare before and after the repair; otherwise the AI's palette and the grounded one."""
     from itertools import combinations
     cols = ([("Before optimising", before, "grounded_hex"), ("After optimising", pal, "grounded_hex")] if before is not None else
-            [("AI palette", pal, "ai_hex"), ("Grounded palette", pal, "grounded_hex")])
+            [("AI palette", pal, "ai_hex"), ("Final palette", pal, "grounded_hex")])
     prefetch_simulations([h for _, d, c in cols for h in d[c] if isinstance(h, str)])
     rows = []
     for lang in languages:
@@ -2732,7 +2732,7 @@ def show_grounded_conditions(pal, languages):
     langs = [l for l in languages if pal[pal.language == l].grounded_hex.notna().sum() > 1]
     for k, lang in enumerate(langs):
         p = pal[(pal.language == lang) & pal.grounded_hex.notna()]
-        show(f'<div style="font-weight:700;margin:10px 0 4px">{esc(lang)}, grounded</div>')
+        show(f'<div style="font-weight:700;margin:10px 0 4px">{esc(lang)}, final</div>')
         show_conditions(p.grounded_hex.tolist(), labels=p.name.tolist(), width=64, note=(k == len(langs) - 1))
 
 
@@ -2743,7 +2743,7 @@ def _status(r):
     if isinstance(r.get("repaired_from"), str): return "optimised · look"
     return "optimised · meaning" if r.get("replaced") else "kept"
 
-def palette_card(pal, languages, path=None, title="Your grounded palette", display_it=True):
+def palette_card(pal, languages, path=None, title="Your final palette", display_it=True):
     """A picture of the grounded palette as on screen: one column per test colour, one row per language
     (test colours that share a name appear in both columns). Without Part B's names: one row per language."""
     import textwrap
@@ -3336,7 +3336,7 @@ def preview_applications(pal, language, vision="Typical", path=None, kind="Bar c
     language = _available_language(pal, language, "PreviewLanguage")
     p = pal[(pal.language == language) & pal.grounded_hex.notna()]
     if p.empty:
-        show(f"<b>No grounded palette for {_h(language)}.</b> {small('Choose one of: ' + _h(', '.join(dict.fromkeys(pal.language))))}")
+        show(f"<b>No final palette for {_h(language)}.</b> {small('Choose one of: ' + _h(', '.join(dict.fromkeys(pal.language))))}")
         return
     full = colours.startswith("All 17")
     if full and (_BY_SDG is None or not len(_BY_SDG)):
@@ -3365,7 +3365,7 @@ def preview_applications(pal, language, vision="Typical", path=None, kind="Bar c
                       handlelength=0.8, handleheight=0.8, labelcolor=MUTED)
     what = {"Colour swatches": "as swatches", "Map (US states)": "applied to a map of the US states",
             "Map (world)": "applied to a world map"}.get(kind, f"applied to a {kind.lower()}")
-    fig.suptitle(f"The {language} grounded palette, {what}" + (" (all 17 SDG colours)" if full else ""), x=0.01, ha="left",
+    fig.suptitle(f"The {language} final palette, {what}" + (" (all 17 SDG colours)" if full else ""), x=0.01, ha="left",
                  fontsize=13, fontweight="bold")
     # the maps' sources are credited in the notebook's credits cell, at the end
     plt.tight_layout()
@@ -3397,11 +3397,11 @@ def corrected_sdg_card(pal, languages, path):
             if isinstance(h, str):
                 corr[int(r.sdg)] = h
                 if de00(h, SDG.hex[int(r.sdg)]) >= 0.5: marked.add(int(r.sdg))
-        rows.append((f"Grounded for {lang}", corr, marked))
+        rows.append((f"Final for {lang}", corr, marked))
     W, Hrow = 17 * 0.62 + 0.3, 1.05
     fig, ax = plt.subplots(figsize=(W, Hrow * len(rows) + 0.7)); ax.axis("off")
     ax.set_xlim(0, W); ax.set_ylim(Hrow * len(rows) + 0.5, -0.5)
-    ax.text(0.15, -0.25, "Your grounded colours in the full SDG palette", fontsize=13, fontweight="bold", color=INK)
+    ax.text(0.15, -0.25, "Your final colours in the full SDG palette", fontsize=13, fontweight="bold", color=INK)
     for k, (label, colours, marked) in enumerate(rows):
         y = k * Hrow + 0.25
         ax.text(0.15, y, label, fontsize=9.5, color=MUTED, va="center")
@@ -3413,14 +3413,14 @@ def corrected_sdg_card(pal, languages, path):
             ax.text(x + 0.08, y + 0.56, str(i), fontsize=7.5, fontweight="bold", color=_ink_on(h), va="bottom")
             if i in marked:
                 ax.add_patch(mpl.patches.Rectangle((x, y + 0.7), 0.54, 0.05, fc=INK, ec="none"))
-    ax.text(0.15, Hrow * len(rows) + 0.35, "Marked: changed from the UN colour. Only the test colours were grounded; the others "
+    ax.text(0.15, Hrow * len(rows) + 0.35, "Marked: changed from the UN colour. Only the test colours were optimised; the others "
             "are the UN's. The SDG goals also have numbers, icons and names: an example, not a proposal to change the UN's colours.",
             fontsize=8, color=MUTED)
     fig.savefig(path, dpi=200, bbox_inches="tight", facecolor="white"); plt.close(fig)
     return True
 
 def full_palette_picture(pal, language, vision, path, threshold=DELTA_E_THRESHOLD):
-    """Section 6 as a picture: the UN's palette, the grounded one for `language`, the arcs and the notes."""
+    """Section 6 as a picture: the UN's palette, the final one for `language`, the arcs and the notes."""
     p = pal[(pal.language == language) & pal.grounded_hex.notna() & pal.sdg.notna()]
     if p.empty:
         return False
@@ -3429,7 +3429,7 @@ def full_palette_picture(pal, language, vision, path, threshold=DELTA_E_THRESHOL
     clean = lambda t: re.sub(r"<[^>]+>", "", t)
     allarcs = sorted([(i, j, True, a) for i, j, d, a in arcs] + [(i, j, False, False) for i, j, d, a in old],
                      key=lambda t: (not t[2], abs(t[0] - t[1])))
-    lines = ([("New, made by grounding (red arcs)", "#B4342D", True)] + [(clean(n), INK, False) for n in notes] if notes else []) + \
+    lines = ([("New, made by optimising (red arcs)", "#B4342D", True)] + [(clean(n), INK, False) for n in notes] if notes else []) + \
             ([("Already close in the UN palette (grey dashed arcs)", "#5E5E5E", True), (", ".join(old_notes), INK, False)] if old_notes else [])
     if not lines:
         lines = [(f"No colour pair involving your test colours is closer than ΔE₀₀ {threshold:g}.", INK, False)]
@@ -3439,7 +3439,7 @@ def full_palette_picture(pal, language, vision, path, threshold=DELTA_E_THRESHOL
     fig, ax = plt.subplots(figsize=(17 * T + 0.4, H)); ax.axis("off")
     ax.set_xlim(0, 17 * T + 0.4); ax.set_ylim(H, 0)
     view = "typical colour vision" if vision == "Typical" else condition_label(vision, " ").lower()
-    ax.text(0.15, 0.3, f"Your test colours, grounded for {language}, in the full SDG palette", fontsize=12.5, fontweight="bold", color=INK)
+    ax.text(0.15, 0.3, f"Your final test colours for {language}, in the full SDG palette", fontsize=12.5, fontweight="bold", color=INK)
     ax.text(0.15, 0.55, f"as seen with {view}", fontsize=9, color=MUTED)
     def tiles(colours, y, label, mark=()):
         ax.text(0.15, y, label, fontsize=9, color=MUTED, va="center")
@@ -3451,7 +3451,7 @@ def full_palette_picture(pal, language, vision, path, threshold=DELTA_E_THRESHOL
             if i in mark:
                 ax.add_patch(mpl.patches.Rectangle((x, y + 0.7), 0.54, 0.05, fc=INK, ec="none"))
     tiles(original, 0.85, "The UN's original palette")
-    tiles(corrected, 1.85, f"Grounded for {language} (marked: changed from the UN colour)", changed)
+    tiles(corrected, 1.85, f"Final for {language} (marked: changed from the UN colour)", changed)
     y0 = 1.85 + 0.8
     xc = lambda i: 0.15 + (i - 1) * T + 0.27
     for k_, (i, j, new, arrow) in enumerate(allarcs):
@@ -3464,7 +3464,7 @@ def full_palette_picture(pal, language, vision, path, threshold=DELTA_E_THRESHOL
     y = y0 + arc_h + 0.15
     for text, col, bold in lines:
         ax.text(0.15, y, text, fontsize=8.8, color=col, fontweight="bold" if bold else "normal", va="top"); y += 0.27
-    ax.text(0.15, y + 0.1, "Only the test colours were grounded; the others are the UN's. The SDG goals also have numbers, icons and "
+    ax.text(0.15, y + 0.1, "Only the test colours were optimised; the others are the UN's. The SDG goals also have numbers, icons and "
             "names: an example, not a proposal to change the UN's colours.", fontsize=7.8, color=MUTED, va="top")
     fig.savefig(path, dpi=200, bbox_inches="tight", facecolor="white"); plt.close(fig)
     return True
@@ -3489,7 +3489,7 @@ def _by_test_colour(pal, languages):
     order = {l: k for k, l in enumerate(languages)}
     return out.sort_values(["language", "sdg"], key=lambda c: c.map(order) if c.name == "language" else c).reset_index(drop=True)
 
-def export_palette(pal, languages, stem="grounded_palette"):
+def export_palette(pal, languages, stem="final_palette"):
     """Pictures of the palettes and the data behind them, zipped for one download."""
     import zipfile, glob
     cols = ["language", "name", "grounded_hex", "ai_hex", "spinner_hex", "de00", "rt_name", "rt_conf",
@@ -3499,23 +3499,23 @@ def export_palette(pal, languages, stem="grounded_palette"):
         export = pal[[c for c in cols if c in pal.columns]]
     files, rows = [], []
     palette_card(pal, languages, path=f"{stem}_card.png", display_it=False)
-    files.append(f"{stem}_card.png"); rows.append([f"<code>{stem}_card.png</code>", "Your grounded palette, by test colour and language, as on screen"])
-    if corrected_sdg_card(pal, languages, "grounded_sdg_palette.png"):
-        files.append("grounded_sdg_palette.png")
-        rows.append(["<code>grounded_sdg_palette.png</code>", "Overview: the full SDG palette grounded for every language"])
+    files.append(f"{stem}_card.png"); rows.append([f"<code>{stem}_card.png</code>", "Your final palette, by test colour and language, as on screen"])
+    if corrected_sdg_card(pal, languages, "final_sdg_palette.png"):
+        files.append("final_sdg_palette.png")
+        rows.append(["<code>final_sdg_palette.png</code>", "Overview: the full SDG palette, optimised for every language"])
         made = 0
         for lang in languages:
             for v in dict.fromkeys(["Typical", _LAST_FULL_VIEW.get(lang, "Typical")]):
-                fn = f"grounded_sdg_{lang.replace(' ', '_')}_{v.replace(' ', '_').lower()}.png"
+                fn = f"final_sdg_{lang.replace(' ', '_')}_{v.replace(' ', '_').lower()}.png"
                 if try_call(full_palette_picture, pal, lang, v, fn):
                     files.append(fn); made += 1
         if made:
-            rows.append(["<code>grounded_sdg_…png</code>", "Section 6 for each language, with its arcs and notes: typical vision, plus the vision you chose there"])
+            rows.append(["<code>final_sdg_…png</code>", "Section 6 for each language, with its arcs and notes: typical vision, plus the vision you chose there"])
     previews = sorted(glob.glob("preview_*.png"))
     if previews:
         files += previews; rows.append(["<code>preview_….png</code>", "The designs you previewed in section 5"])
     export.round(2).to_csv(f"{stem}.csv", index=False, encoding="utf-8-sig")
-    files.append(f"{stem}.csv"); rows.append([f"<code>{stem}.csv</code>", "Every test colour in every language: grounded hex code, status, and the evidence"])
+    files.append(f"{stem}.csv"); rows.append([f"<code>{stem}.csv</code>", "Every test colour in every language: final hex code, status, and the evidence"])
     if _BY_SDG is not None and len(_BY_SDG):
         full_rows = []
         for lang in languages:
@@ -3523,10 +3523,10 @@ def export_palette(pal, languages, stem="grounded_palette"):
             labels, hexes, flags = full_sdg_palette(pal, lang)
             for i, (lab, h, f) in enumerate(zip(labels, hexes, flags), 1):
                 full_rows.append({"language": lang, "sdg": i, "goal": SDG.goal[i], "hex": h,
-                                  "source": "grounded" if f else "UN", "name": lab.split(" ", 1)[1] if f else ""})
-        pd.DataFrame(full_rows).to_csv("grounded_sdg_palette.csv", index=False, encoding="utf-8-sig")
-        files.append("grounded_sdg_palette.csv")
-        rows.append(["<code>grounded_sdg_palette.csv</code>", "All 17 SDG colours for each audience, with your test colours grounded"])
+                                  "source": "final" if f else "UN", "name": lab.split(" ", 1)[1] if f else ""})
+        pd.DataFrame(full_rows).to_csv("final_sdg_palette.csv", index=False, encoding="utf-8-sig")
+        files.append("final_sdg_palette.csv")
+        rows.append(["<code>final_sdg_palette.csv</code>", "All 17 SDG colours for each audience, with your final test colours"])
     with zipfile.ZipFile(f"{stem}.zip", "w") as z:
         for fn in files:
             z.write(fn)
@@ -3697,10 +3697,10 @@ def show_corrected_sdg(pal, language, vision="Typical", threshold=DELTA_E_THRESH
         show("This step needs the names from Part B (uploaded <code>partB_results.csv</code>), because it has to know "
              "which SDG colour each name belongs to.")
         return
-    language = _available_language(pal, language, "Grounded for")
+    language = _available_language(pal, language, "Language")
     p = pal[(pal.language == language) & pal.grounded_hex.notna() & pal.sdg.notna()]
     if p.empty:
-        show(f"<b>No grounded colours for {_h(language)}.</b> " + small("Choose one of: " + _h(", ".join(dict.fromkeys(pal.language)))))
+        show(f"<b>No final colours for {_h(language)}.</b> " + small("Choose one of: " + _h(", ".join(dict.fromkeys(pal.language)))))
         return
     original, corrected, named, changed, arcs, old, notes, old_notes = _full_check(pal, p, language, vision, threshold)
     sim = lambda h: simulate(h, vision)
@@ -3734,17 +3734,17 @@ def show_corrected_sdg(pal, language, vision="Typical", threshold=DELTA_E_THRESH
                 f'<path d="M0,0 L8,4 L0,8 z" fill="#B4342D"/></marker></defs>{"".join(parts)}</svg>')
     view = "typical colour vision" if vision == "Typical" else condition_label(vision, " ").lower()
     html = (row(original, "The UN's original palette")
-            + row(corrected, f"Your test colours grounded for {_h(language)} (marked: changed from the UN colour; the others are unchanged)", changed)
+            + row(corrected, f"Your final test colours for {_h(language)} (marked: changed from the UN colour; the others are unchanged)", changed)
             + arcs_svg()
             + ((f'<div style="font-size:12px;color:{MUTED};margin:0 0 4px">'
-                f'<span style="color:#B4342D;font-weight:700">⟶ red arc</span>: a new problem, made by grounding · '
+                f'<span style="color:#B4342D;font-weight:700">⟶ red arc</span>: a new problem, made by optimising · '
                 f'<span style="color:#8A8A85;font-weight:700">- - grey dashed arc</span>: already close in the UN palette</div>')
                if (arcs or old) else ""))
-    show(f"<b>Your test colours, grounded for {_h(language)}, in the full SDG palette</b> {small('as seen with ' + _h(view))}" + html)
+    show(f"<b>Your final test colours for {_h(language)}, in the full SDG palette</b> {small('as seen with ' + _h(view))}" + html)
     body = ""
     if notes:
-        body += (f'<div style="margin-top:4px"><b style="color:#B4342D">New, made by grounding</b> '
-                 f'{small("(red arcs; an arrow points from a grounded colour to the unchanged colour it is now close to)")}</div>'
+        body += (f'<div style="margin-top:4px"><b style="color:#B4342D">New, made by optimising</b> '
+                 f'{small("(red arcs; an arrow points from a final colour to the unchanged colour it is now close to)")}</div>'
                  + "".join(f'<div style="font-size:13px;margin:3px 0">{n}</div>' for n in notes))
     if old_notes:
         body += (f'<div style="margin-top:8px"><b style="color:#5E5E5E">Already close in the UN palette</b> '
@@ -3752,7 +3752,7 @@ def show_corrected_sdg(pal, language, vision="Typical", threshold=DELTA_E_THRESH
                  f'<div style="font-size:13px;margin:3px 0">{", ".join(old_notes)}</div>')
     if body:
         show(f"<b>Check these again</b>, as seen with {_h(view)}" + body +
-             f'<div class="note">Grounding fixes what each name means; it can also merge colours that share a name, or '
+             f'<div class="note">Optimising fixes what each name means; it can also merge colours that share a name, or '
              f'move a colour close to one you didn\'t test. Problems that were already in the UN palette stay unless '
              f'those colours are changed too.</div>')
     else:
@@ -3876,8 +3876,8 @@ def show_repair_journey(pal, language, path=None):
         before = r.repaired_from if isinstance(r.get("repaired_from"), str) else r.grounded_hex
         rows.append((i, r, before))
     if not rows:
-        show(small(f"No grounded colours for {_h(language)} yet: run section 4 first.")); return
-    steps = ["Test colour", "AI's colour", "Speakers' best example", "Grounded", "Optimised"]
+        show(small(f"No final colours for {_h(language)} yet: run section 4 first.")); return
+    steps = ["Test colour", "AI's colour", "Speakers' best example", "Final", "Optimised"]
     fig, ax = plt.subplots(figsize=(12.5, 1.15 * len(rows) + 1.4)); ax.axis("off")
     ax.set_xlim(0, 12.5); ax.set_ylim(1.15 * len(rows) + 0.9, -0.2)
     xs = [1.3 + k * 2.35 for k in range(5)]
@@ -4053,7 +4053,7 @@ def show_renames(pal):
 
 
 def undo_renames(pal):
-    """Back to the names and best examples from section 3, so that rerunning 'Ground and repair' starts afresh."""
+    """Back to the names and best examples from section 3, so that rerunning section 4 starts afresh."""
     pal = pal.copy()
     if "renamed_from" in pal:
         for k in pal.index[pal.renamed_from.apply(lambda v: isinstance(v, str))]:
@@ -4223,9 +4223,12 @@ def name_palette(pal, spinner, languages):
     """Step 2: test colours that share a name get different names (a close synonym's best example)."""
     out = rename_shared_names(pal, spinner, languages, conditions=["Typical"])
     out = match_test_colours(out)                      # the synonym goes to whichever test colour it is closer to
-    show_step_palette(out, pal, languages, "Step 2 · Your palette, with every test colour named on its own", "renamed",
-                      note="Where two test colours shared a name, one now has the closest synonym, given to whichever test colour "
-                           "it is closer to. Every colour is the best example of its name.")
+    step2 = lambda before_name, r: "renamed" if isinstance(r.get("renamed_from"), str) and not same_name(before_name, r["name"]) \
+                                    and same_name(before_name, r.get("renamed_from")) else "matched"
+    show_step_palette(out, pal, languages, "Step 2 · Your palette, with every test colour named on its own", step2,
+                      note="Where two test colours shared a name, one now has the closest synonym. Then each colour goes with the "
+                           "test colour it is closest to (ΔE₀₀), so the darker blue goes with the darker test colour. Every colour is "
+                           "the best example of its name.")
     if out.attrs.get("renames"):
         _details("Details: which names changed, and why", show_renames, out)
     return out
@@ -4233,6 +4236,12 @@ def name_palette(pal, spinner, languages):
 def repair_for(pal, spinner, languages, vision="Typical", threshold=DELTA_E_THRESHOLD):
     """Step 3: separate colours that look alike for one kind of vision, within their names. Only that kind of
     vision is used: the palette is corrected for the viewer you choose."""
+    if vision == "Typical":
+        show_step_palette(pal, pal, languages, "Step 3 · Your palette, with typical colour vision", "", unchanged_label="",
+                          count=False, note="With typical colour vision the palette is already right: every colour is the best "
+                          "example of its name. Choose a colour vision deficiency or an age to optimise it for that viewer.")
+        out = pal.copy(); out.attrs["vision"] = vision
+        return out
     cond = [vision]
     try:
         out = optimise_palettes(pal, spinner, languages, threshold, conditions=cond)
@@ -4335,36 +4344,45 @@ def show_nearest_sdg(pal, languages, threshold=DELTA_E_THRESHOLD):
                       "colour vision). A colour now closer to another goal could be mistaken for that goal in a design.")
 
 def match_test_colours(pal, spinner=None, languages=None, threshold=DELTA_E_THRESHOLD):
-    """Step 3: test colours that shared a name before Step 2 now have two names (the original and a synonym), each
-    shown as the best example of that name. Here they swap names if that puts each name with the test colour it is
-    closer to (smallest total ΔE₀₀, typical vision), so the lighter test colour gets the lighter name. No colour changes:
-    every colour stays the best example of its name."""
-    pal = pal.copy()
-    log = []
-    test = lambda k: SDG.hex[int(pal.at[k, "sdg"])]
-    swap_cols = [c for c in ("name", "romanized", "grounded_hex", "spinner_hex", "renamed_from", "orig_spinner_hex", "orig_romanized",
-                             "replaced") if c in pal]
+    """Part of Step 2: in each language, the palette's colours (each the best example of its name) are matched to the
+    test colours so that every test colour gets the colour closest to it (the smallest total ΔE₀₀, typical vision):
+    the darker blue goes with the darker test colour, the lighter with the lighter one. No colour or name changes;
+    only which test colour each one stands for."""
+    from itertools import permutations
     import copy
+    pal = pal.copy()
     pal.attrs["renames"] = copy.deepcopy(pal.attrs.get("renames", []))
-    for e in pal.attrs["renames"]:
-        rows = lambda sdg: list(pal.index[(pal.language == e["language"]) & (pal.sdg == sdg)])
-        a, b = (rows(e["sdg"]) or [None])[0], (rows(e["shared_with"]) or [None])[0]
-        if a is None or b is None or not all(isinstance(pal.at[x, "grounded_hex"], str) for x in (a, b)):
+    cols = [c for c in ("name", "romanized", "grounded_hex", "spinner_hex", "renamed_from", "orig_spinner_hex", "orig_romanized",
+                        "replaced", "repaired_from", "ai_hex", "de00", "rt_name", "rt_conf") if c in pal]
+    log = []
+    for lang in dict.fromkeys(pal.language):
+        idx = [k for k in pal.index[pal.language == lang] if isinstance(pal.at[k, "grounded_hex"], str) and pal.at[k, "sdg"] == pal.at[k, "sdg"]]
+        if len(idx) < 2 or len(idx) > 7:
             continue
-        da, db = de00(test(a), pal.at[a, "grounded_hex"]), de00(test(b), pal.at[b, "grounded_hex"])
-        sa, sb = de00(test(a), pal.at[b, "grounded_hex"]), de00(test(b), pal.at[a, "grounded_hex"])
-        if sa + sb < da + db:
-            old_a, old_b = pal.at[a, "grounded_hex"], pal.at[b, "grounded_hex"]
-            old_name_a, old_name_b = pal.at[a, "name"], pal.at[b, "name"]
-            for c in swap_cols:
-                pal.at[a, c], pal.at[b, c] = pal.at[b, c], pal.at[a, c]
-            log.append(dict(language=e["language"], kind="swap", sdg=int(pal.at[a, "sdg"]), other=int(pal.at[b, "sdg"]),
-                            name=pal.at[a, "name"], other_name=pal.at[b, "name"], old=old_a, other_old=old_b,
-                            d=(da, sa), other_d=(db, sb)))
-            e["sdg"], e["shared_with"] = e["shared_with"], e["sdg"]      # the synonym now belongs to the other test colour
-            if e.get("nearest_sdg") == e["sdg"]:                           # its nearest colour is now the other one
-                e["nearest_sdg"], e["nearest_name"] = e["shared_with"], pal.at[b if pal.at[a, "sdg"] == e["sdg"] else a, "name"]
-            e["matched"] = True
+        tests = [SDG.hex[int(pal.at[k, "sdg"])] for k in idx]
+        colours = [pal.at[k, "grounded_hex"] for k in idx]
+        d = [[de00(t, c) for c in colours] for t in tests]                 # test colour × palette colour
+        now = sum(d[i][i] for i in range(len(idx)))
+        best = min(permutations(range(len(idx))), key=lambda p_: sum(d[i][p_[i]] for i in range(len(idx))))
+        total = sum(d[i][best[i]] for i in range(len(idx)))
+        if total >= now - NOTICEABLE:
+            continue
+        bundles = {k: {c: pal.at[k, c] for c in cols} for k in idx}
+        moved_to = {}                                                       # old test colour → new test colour, per colour
+        for i, k in enumerate(idx):
+            src = idx[best[i]]
+            if src != k:
+                log.append(dict(language=lang, sdg=int(pal.at[k, "sdg"]), name=bundles[src]["name"], hex=bundles[src]["grounded_hex"],
+                                was_name=bundles[k]["name"], was_hex=bundles[k]["grounded_hex"], before=d[i][i], after=d[i][best[i]]))
+            moved_to[int(pal.at[src, "sdg"])] = int(pal.at[k, "sdg"])
+            for c in cols:
+                pal.at[k, c] = bundles[src][c]
+        for e in pal.attrs["renames"]:                                      # the renaming table follows its colour
+            if e.get("language") == lang:
+                e["sdg"] = moved_to.get(e["sdg"], e["sdg"])
+                e["shared_with"] = moved_to.get(e.get("shared_with"), e.get("shared_with"))
+                if e.get("nearest_sdg") is not None:
+                    e["nearest_sdg"] = moved_to.get(e["nearest_sdg"], e["nearest_sdg"])
     pal.attrs["matches"] = log
     return pal
 
@@ -4513,25 +4531,40 @@ def _spread_labels(xy, gap=5.5, width=34, rounds=200):
         if not moved: break
     return ys
 
-def plot_sdg_plane(pal=None, language=None):
+def plot_sdg_plane(pal=None, language=None, vision="Typical"):
     """The 17 SDG colours on the CIELAB a*–b* plane, seen from above, labelled with their goals. With a Part C palette
-    and a language: the other goals faded, and an arrow from each test colour's UN colour to its final colour."""
-    labs = {i: rgb_to_lab(h) for i, h in SDG.hex.items()}
+    and a language: the other goals faded, and an arrow from each test colour's UN colour to its final colour. With a
+    vision other than typical, every colour is shown as that viewer sees it (the Spinner's simulations), like the
+    palettes above it."""
+    see = lambda h: h
+    if vision != "Typical":
+        try:
+            prefetch_simulations(list(SDG.hex) + ([h for h in pal.grounded_hex if isinstance(h, str)] if pal is not None else []), [vision])
+            see = lambda h: simulate(h, vision)
+            see(SDG.hex[1])
+        except SimulationUnavailable:
+            show(small(f"The Colour Spinner didn't answer in time, so this plot shows typical colour vision, not {vision.lower()}."))
+            see, vision = (lambda h: h), "Typical"
+    labs = {i: rgb_to_lab(see(h)) for i, h in SDG.hex.items()}
     final = {}
     if pal is not None and language is not None and "sdg" in pal:
         for _, r in pal[pal.language == language].iterrows():
             if isinstance(r.get("grounded_hex"), str) and r.sdg == r.sdg:
-                final[int(r.sdg)] = (r.grounded_hex, r["name"])
+                final[int(r.sdg)] = (see(r.grounded_hex), r["name"])
     fig, ax = plt.subplots(figsize=(9.6, 7.2))
     _lab_axes(ax)
     pts = {i: (float(l[1]), float(l[2])) for i, l in labs.items()}
-    label_y = dict(zip(pts, _spread_labels(list(pts.values()))))
+    fin = {i: (float(rgb_to_lab(h)[1]), float(rgb_to_lab(h)[2])) for i, (h, _) in final.items()}
+    keys = [("g", i) for i in pts] + [("f", i) for i in fin]              # goals' labels and final colours' labels together
+    ys = _spread_labels([pts[i] if k == "g" else fin[i] for k, i in keys], gap=5.5, width=40)
+    label_y = {i: y for (k, i), y in zip(keys, ys) if k == "g"}
+    final_y = {i: y for (k, i), y in zip(keys, ys) if k == "f"}
     for i, (a, b) in pts.items():
         faded = bool(final) and i not in final
-        ax.scatter(a, b, s=90 if faded else 150, color=SDG.hex[i], edgecolor="white", linewidth=1.2,
+        ax.scatter(a, b, s=90 if faded else 150, color=see(SDG.hex[i]), edgecolor="white", linewidth=1.2,
                    alpha=0.35 if faded else 1, zorder=3)
         label = f"{i}" if i in final else f"{i} {SDG_SHORT[i]}"      # a test colour's name goes with its final colour
-        ax.text(a + 2.6, label_y[i] if i not in final else b, label, va="center", fontsize=9 if faded else 10,
+        ax.text(a + 2.6, label_y[i], label, va="center", fontsize=9 if faded else 10,
                 color=MUTED if faded else INK, alpha=0.6 if faded else 1, zorder=4)
     for i, (hx, name) in final.items():                 # where each test colour went
         l = rgb_to_lab(hx); a1, b1 = float(l[1]), float(l[2])
@@ -4540,7 +4573,9 @@ def plot_sdg_plane(pal=None, language=None):
             ax.annotate("", xy=(a1, b1), xytext=(a0, b0), zorder=5,
                         arrowprops=dict(arrowstyle="-|>", color=INK, lw=1.3, shrinkA=7, shrinkB=9))
         ax.scatter(a1, b1, s=260, color=hx, edgecolor=INK, linewidth=1.6, zorder=6)
-        ax.text(a1 + 3.6, b1, f"#{i} {name}", ha="left", va="center", fontsize=10.5, fontweight="bold", color=INK, zorder=7,
+        if abs(final_y[i] - b1) > 1:                                        # a label moved away: a thin line back to its point
+            ax.plot([a1 + 1.5, a1 + 3.4], [b1, final_y[i]], color=MUTED, lw=0.7, zorder=6)
+        ax.text(a1 + 3.6, final_y[i], f"#{i} {name}", ha="left", va="center", fontsize=10.5, fontweight="bold", color=INK, zorder=7,
                 bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="none", alpha=0.9))
     allx = [a for a, _ in pts.values()] + [float(rgb_to_lab(h)[1]) for h, _ in final.values()]
     ally = [b for _, b in pts.values()] + [float(rgb_to_lab(h)[2]) for h, _ in final.values()]
@@ -4548,7 +4583,8 @@ def plot_sdg_plane(pal=None, language=None):
     ax.grid(color="#EFEFEC", lw=0.8); ax.set_axisbelow(True)
     for sp in ("top", "right"): ax.spines[sp].set_visible(False)
     if final:
-        _titles(ax, f"Where your test colours moved, in {language}",
+        _titles(ax, f"Where your test colours moved, in {language}" + ("" if vision == "Typical" else f", as seen with {vision_phrase(vision)}"),
+                ("" if vision == "Typical" else f"Every colour as a viewer with {vision_phrase(vision)} would see it, as in the palettes above. ") +
                 "The UN's 17 SDG colours on the CIELAB a*–b* plane, seen from above (lightness not shown). Arrows: from each "
                 "test colour's UN colour (its number) to your final colour (its number and name). The other goals are faded.")
     else:
@@ -4644,7 +4680,8 @@ def show_step_palette(pal, before, languages, title, change_label, unchanged_lab
             bh, bn = (b.grounded_hex, b["name"]) if b is not None else (r.grounded_hex, r["name"])
         moved = isinstance(bh, str) and (bh.upper() != r.grounded_hex.upper() or not same_name(bn, r["name"]))
         changed[0] += moved
-        line = pill(change_label, "mid") if moved else (small(unchanged_label) if unchanged_label else "")
+        label = change_label(bn, r) if callable(change_label) else change_label
+        line = pill(label, "mid") if moved else (small(unchanged_label) if unchanged_label else "")
         return bh, bn, r.grounded_hex, r["name"], line
     left = "AI" if isinstance(before, str) and before == "ai" else "before"
     html = _captured(_split_grid, title, "", langs, tests, cell, left, "after", note="")   # the count is known only afterwards
@@ -4669,5 +4706,5 @@ def show_nearest_sdg(pal, languages, threshold=DELTA_E_THRESHOLD):
                 "own goal: still closest to its own goal's colour · closer to #k: it now looks more like another goal's colour, "
                 "so it could be mistaken for that goal in a design.", langs, tests, cell, "final", "nearest SDG")
 
-TOOLKIT_VERSION = "2026-10-31 18:23"
+TOOLKIT_VERSION = "2026-10-31 19:06"
 print(f"Toolkit ready ✓  version {TOOLKIT_VERSION}  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))
