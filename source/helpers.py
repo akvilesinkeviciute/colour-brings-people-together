@@ -3418,17 +3418,9 @@ def show_step_palette(pal, before, languages, title, change_label, unchanged_lab
 
 def _details(summary, fn, *args, **kwargs):
     """Run a function that shows its own output, folded under a 'Details' line."""
-    shown = []
-    global show
-    real = show
-    show = lambda h: shown.append(h)
-    try:
-        fn(*args, **kwargs)
-    finally:
-        show = real
+    shown = _captured(fn, *args, **kwargs)
     if shown:
-        real(f'<details style="margin-top:10px"><summary style="cursor:pointer">{_h(summary)}</summary>{"".join(shown)}</details>')
-
+        show(f'<details style="margin-top:10px"><summary style="cursor:pointer">{_h(summary)}</summary>{"".join(shown)}</details>')
 
 def show_ai_grid(pal, languages, threshold=DELTA_E_THRESHOLD):
     """Section 3 in the same grid as section 4: one row per test colour, one column per language. Each cell: the AI's
@@ -3530,3 +3522,115 @@ def plot_sdg_plane(pal=None, language=None):
                 "The CIELAB a*–b* plane, seen from above (lightness not shown): reds and greens lie at opposite ends across, "
                 "yellows and blues up and down; the further from the centre, the more vivid the colour. Close colours are easier to confuse.")
     fig.tight_layout(); plt.show()
+
+
+# ── Part C: one split-swatch grid for section 3 and every step of section 4 ──
+def _captured(fn, *args, **kwargs):
+    """Run fn, collecting what it would show instead of showing it."""
+    g = globals(); real, out = g["show"], []
+    g["show"] = out.append
+    try:
+        fn(*args, **kwargs)
+    finally:
+        g["show"] = real
+    return out
+SPLIT_W = 150
+
+def _split(left, left_label, right, right_label):
+    """One frame, two halves: left and right colour, each with an optional label."""
+    half = lambda hx, lab, edge: (f'<div style="background:{hx};color:{_ink_on(hx)};font-weight:700;font-size:11px;'
+                                  f'white-space:nowrap;overflow:hidden{";border-left:2px solid #777" if edge else ""}">{_h(lab or "")}</div>')
+    return (f'<div class="pair" style="width:{SPLIT_W}px;height:46px">{half(left, left_label, False)}'
+            f'{half(right, right_label, True)}</div>')
+
+def _split_grid(title, key, langs, tests, cell, left_head, right_head, note=""):
+    """Rows: test colours; columns: languages. cell(language, test colour) → (left hex, left label, right hex,
+    right label, line under the swatch) or None. The column headers say once what each half is."""
+    head = ["Your test colour"] + [
+        f'{_h(l)}<div style="display:flex;width:{SPLIT_W}px;margin-top:3px;font-size:11px;color:{MUTED}">'
+        f'<span style="flex:1">{_h(left_head)}</span><span style="flex:1;padding-left:5px">{_h(right_head)}</span></div>' for l in langs]
+    rows = []
+    for i in tests:
+        cells = []
+        for l in langs:
+            c = cell(l, i)
+            if c is None or not isinstance(c[0], str) or not isinstance(c[2], str):
+                cells.append(small("—")); continue
+            lh, ll, rh, rl, line = c
+            cells.append(f'{_split(lh, ll, rh, rl)}<div style="margin-top:4px;white-space:nowrap">{line}</div>')
+        rows.append([framed(SDG.hex[i], f"#{i}", 70, 46, 13)] + cells)
+    show(f"<b>{_h(title)}</b>" + (f'<div style="margin-top:2px">{small(key)}</div>' if key else ""))
+    table(head, rows, valign="top", note=note or None)
+
+def _tests_and_langs(pal, languages):
+    tests = list(dict.fromkeys(_BY_SDG.sdg.astype(int))) if _BY_SDG is not None and len(_BY_SDG) else []
+    return tests, [l for l in languages if (pal.language == l).any()]
+
+def _row(p, l, i):
+    if p is None or "sdg" not in p: return None
+    r = p[(p.language == l) & (p.sdg == i)]
+    return r.iloc[0] if not r.empty else None
+
+def show_ai_grid(pal, languages, threshold=DELTA_E_THRESHOLD):
+    """Section 3: the AI's colour (left) and speakers' best example (right) for each name, the ΔE₀₀ between them,
+    and the round trip."""
+    pt = per_test_colour(pal)
+    tests, langs = _tests_and_langs(pt, languages)
+    if not tests or not langs or "sdg" not in pt:
+        show_comparison(pal, threshold); return
+    def cell(l, i):
+        r = _row(pt, l, i)
+        if r is None or not isinstance(r.ai_hex, str) or not isinstance(r.spinner_hex, str): return None
+        d = de00(r.ai_hex, r.spinner_hex)
+        line = pill(f"ΔE₀₀ = {d:.1f}", "bad" if d > threshold else "good")
+        rt, conf = r.get("rt_name"), r.get("rt_conf")
+        if isinstance(rt, str):
+            pc = f"{conf:.0%}" if isinstance(conf, float) and conf == conf else ""
+            line += " " + small(f"✓ {pc}" if same_name(rt, r["name"], r.get("romanized")) else f"✗ {_h(rt)} {pc}")
+        return r.ai_hex, r["name"], r.spinner_hex, "", line
+    _split_grid("The AI's colours, next to speakers' best examples",
+                f"ΔE₀₀ between the two: red above {threshold:g}, a different colour. ✓ speakers would call the AI's colour by the same "
+                f"name · ✗ they would call it something else (shown), with the Namer's confidence.",
+                langs, tests, cell, "AI", "speakers", note="A name that two test colours share appears in both rows.")
+
+def show_step_palette(pal, before, languages, title, change_label, unchanged_label="unchanged", extra=None, note="", count=True):
+    """Every step of section 4: before (left) and after (right) for each test colour and language, and what changed.
+    `before` is the palette before the step, or "ai" for the AI's own colours."""
+    tests, langs = _tests_and_langs(pal, languages)
+    if not tests or not langs:
+        show(small("This step needs the names from Part B.")); return
+    changed = [0]
+    def cell(l, i):
+        r = _row(pal, l, i)
+        if r is None or not isinstance(r.grounded_hex, str): return None
+        if isinstance(before, str) and before == "ai":
+            bh, bn = r.get("ai_hex"), r["name"]
+        else:
+            b = _row(before, l, i)
+            bh, bn = (b.grounded_hex, b["name"]) if b is not None else (r.grounded_hex, r["name"])
+        moved = isinstance(bh, str) and (bh.upper() != r.grounded_hex.upper() or not same_name(bn, r["name"]))
+        changed[0] += moved
+        line = pill(change_label, "mid") if moved else (small(unchanged_label) if unchanged_label else "")
+        return bh, bn, r.grounded_hex, r["name"], line
+    left = "AI" if isinstance(before, str) and before == "ai" else "before"
+    html = _captured(_split_grid, title, "", langs, tests, cell, left, "after", note="")   # the count is known only afterwards
+    lead = ((f"{changed[0]} colour{'s' if changed[0] != 1 else ''} changed in this step. " if changed[0] else "Nothing changed in this step. ")
+            if count else "")
+    show("".join(html) + (f'<div class="note">{_h(lead + note)}</div>' if (lead + note) else ""))
+
+def show_nearest_sdg(pal, languages, threshold=DELTA_E_THRESHOLD):
+    """Step 4: each final colour (left) and the nearest of the UN's 17 SDG colours (right), ΔE₀₀ with typical vision."""
+    tests, langs = _tests_and_langs(pal, languages)
+    if not tests or not langs:
+        show(small("This step needs the names from Part B.")); return
+    def cell(l, i):
+        r = _row(pal, l, i)
+        if r is None or not isinstance(r.grounded_hex, str): return None
+        d = {k: de00(r.grounded_hex, h) for k, h in SDG.hex.items()}
+        k = min(d, key=d.get)
+        line = (pill("own goal", "good") + " " + small(f"ΔE₀₀ = {d[k]:.1f}") if k == i else
+                pill(f"closer to #{k}", "mid") + " " + small(f"ΔE₀₀ = {d[k]:.1f}"))
+        return r.grounded_hex, r["name"], SDG.hex[k], f"#{k}", line
+    _split_grid("Step 4 · Which SDG colour is each of your colours closest to?",
+                "own goal: still closest to its own goal's colour · closer to #k: it now looks more like another goal's colour, "
+                "so it could be mistaken for that goal in a design.", langs, tests, cell, "final", "nearest SDG")
