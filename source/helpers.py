@@ -3011,9 +3011,11 @@ def show_renames(pal):
     show("<b>Renamed: test colours that shared a name</b>")
     table(["Language", "Test colour", "Name it shared", "Renamed to", "Now"], rows,
           note=f"Two test colours with the same name would be confused when people talk about them, however different they look. "
-               f"The later one gets a different name: the most similar synonym of the shared name (among its top {SYNONYMS_TO_TRY} in the "
+               f"One of them gets a different name: the most similar synonym of the shared name (among its top {SYNONYMS_TO_TRY} in the "
                f"Spinner's Thesaurus) whose best example can be told apart at a glance from your other colours (ΔE₀₀ {DELTA_E_THRESHOLD:g} "
-               f"or more with typical colour vision); if none can, the one that comes closest. Step 3 then checks other kinds of vision.")
+               f"or more with typical colour vision); if none can, the one that comes closest. The synonym goes to whichever of the two "
+               f"test colours it is closer to, so the lighter test colour gets the lighter name. Every colour stays the best example of its "
+               f"name. Step 3 then checks other kinds of vision.")
 
 
 def undo_renames(pal):
@@ -3186,10 +3188,12 @@ def ground_palette(pal, replace_when="Either", threshold=DELTA_E_THRESHOLD):
 def name_palette(pal, spinner, languages):
     """Step 2: test colours that share a name get different names (a close synonym's best example)."""
     out = rename_shared_names(pal, spinner, languages, conditions=["Typical"])
+    out = match_test_colours(out)                      # the synonym goes to whichever test colour it is closer to
+    show_step_palette(out, pal, languages, "Step 2 · Your palette, with every test colour named on its own", "renamed",
+                      note="Where two test colours shared a name, one now has the closest synonym, given to whichever test colour "
+                           "it is closer to. Every colour is the best example of its name.")
     if out.attrs.get("renames"):
-        show_renames(out)
-    else:
-        show("<b>No test colours share a name</b> " + small("in any of your languages, so nothing needed renaming."))
+        _details("Details: which names changed, and why", show_renames, out)
     return out
 
 def repair_for(pal, spinner, languages, vision="Typical", threshold=DELTA_E_THRESHOLD):
@@ -3203,11 +3207,15 @@ def repair_for(pal, spinner, languages, vision="Typical", threshold=DELTA_E_THRE
         out = repair_palettes(pal, spinner, languages, threshold, conditions=cond)
     out.attrs["vision"] = vision
     if out.attrs.get("repairs"):
-        show_repairs(out, threshold)
+        pass
     else:
         show(f"<b>No colours needed optimising</b> " + small(f"for {vision_phrase(vision)}: "
              f"every pair is already ΔE₀₀ = {threshold:g} or more apart, or no colour of the same name would help."))
-    show_grounded(out, languages, title=f"Your final palette, corrected for {vision_phrase(vision)}")
+    show_step_palette(out, pal, languages, f"Step 3 · Your palette, optimised for {vision_phrase(vision)}", "optimised · look",
+                      note="Optimised colours moved to another example of the same name, to be told apart from the palette's "
+                           "other colours by this viewer. This is your final palette.")
+    if out.attrs.get("repairs"):
+        _details("Details: what moved, and how far", show_repairs, out, threshold)
     return out
 
 
@@ -3277,105 +3285,248 @@ def build_offline_cache(subset=DEFAULT_SUBSET, languages=ALL_LANGUAGES_7, path="
 
 
 def show_nearest_sdg(pal, languages, threshold=DELTA_E_THRESHOLD):
-    """Step 4: each final colour matched to its nearest of the UN's 17 SDG colours (ΔE₀₀, typical vision). Grounding
-    and optimising can move a colour so far that it now looks more like another goal's colour than its own."""
-    get = _grounded_lookup(pal)
-    tests = list(dict.fromkeys(_BY_SDG.sdg.astype(int))) if _BY_SDG is not None and len(_BY_SDG) else []
-    langs = [l for l in languages if (pal.language == l).any()]
-    if not tests or not langs:
-        show(small("This step needs the names from Part B.")); return
-    rows, moved = [], 0
-    for i in tests:
-        cells = []
-        for l in langs:
-            t = _BY_SDG[(_BY_SDG.sdg == i) & (_BY_SDG.language == l)]
-            r = get(l, i, t["name"].iloc[0]) if not t.empty else None
-            if r is None or not isinstance(r.grounded_hex, str):
-                cells.append(small("—")); continue
-            d = {k: de00(r.grounded_hex, h) for k, h in SDG.hex.items()}
-            k = min(d, key=d.get)
-            own = k == i
-            moved += not own
-            badge = pill(f"#{k} · ΔE₀₀ = {d[k]:.1f}", "good" if own else "mid")
-            note = small("still closest to its own goal") if own else small(f"now closer to #{k} than to #{i} (ΔE₀₀ = {d[i]:.1f})")
-            cells.append(f'{framed(r.grounded_hex, r["name"], 104, 50, 12)}<div style="margin-top:6px">{badge}<br>{note}</div>')
-        rows.append([framed(SDG.hex[i], f"#{i}", 84, 50, 12)] + cells)
-    show("<b>Which SDG colour is each of your colours closest to?</b>")
-    table(["Your test colour"] + [_h(l) for l in langs], rows, valign="top",
-          note=f"Each final colour, matched to the nearest of the UN's 17 SDG colours (ΔE₀₀, typical colour vision). "
-               f"{moved} of your colours now look more like another goal's colour than their own: in a design, check that "
-               f"they can't be mistaken for that goal." if moved else
-               "Every final colour is still closest to its own goal's colour.")
+    """Step 4: the same palette grid, with each final colour matched to its nearest of the UN's 17 SDG colours (ΔE₀₀,
+    typical vision). Optimising can move a colour so far that it looks more like another goal's colour than its own."""
+    moved = []
+    def badge(l, i, r):
+        d = {k: de00(r.grounded_hex, h) for k, h in SDG.hex.items()}
+        k = min(d, key=d.get)
+        if k == i:
+            return f'<div style="margin-top:4px">{pill(f"#{k} · ΔE₀₀ = {d[k]:.1f}", "good")}<br>{small("closest to its own goal")}</div>'
+        moved.append(1)
+        return (f'<div style="margin-top:4px">{pill(f"#{k} · ΔE₀₀ = {d[k]:.1f}", "mid")}<br>'
+                f'{small(f"now closer to #{k} than to #{i} (ΔE₀₀ = {d[i]:.1f})")}</div>')
+    show_step_palette(pal, pal, languages, "Step 4 · Which SDG colour is each of your colours closest to?", "", unchanged_label="",
+                      extra=badge, count=False, note="Each final colour, matched to the nearest of the UN's 17 SDG colours (ΔE₀₀, typical "
+                      "colour vision). A colour now closer to another goal could be mistaken for that goal in a design.")
 
-
-def match_test_colours(pal, spinner, languages, threshold=DELTA_E_THRESHOLD):
-    """Step 3: bring each colour as close as its name allows to the test colour it stands for (ΔE₀₀, typical vision).
-    1. Test colours that shared a name before Step 2 swap their names (and colours) if the swap is closer to both test
-       colours, so the lighter test colour gets the lighter name.
-    2. Each colour then moves to the tile of its own name in the Spinner's Mapper that is closest to its test colour:
-       any tile within ΔE₀₀ `threshold` of the name's best example, or further if speakers still give the tile that name
-       (so boundary colours aren't used). Names don't change."""
+def match_test_colours(pal, spinner=None, languages=None, threshold=DELTA_E_THRESHOLD):
+    """Step 3: test colours that shared a name before Step 2 now have two names (the original and a synonym), each
+    shown as the best example of that name. Here they swap names if that puts each name with the test colour it is
+    closer to (smallest total ΔE₀₀, typical vision), so the lighter test colour gets the lighter name. No colour changes:
+    every colour stays the best example of its name."""
     pal = pal.copy()
-    for col in ("repaired_from", "renamed_from"):
-        if col not in pal: pal[col] = None
     log = []
     test = lambda k: SDG.hex[int(pal.at[k, "sdg"])]
-    swap_cols = [c for c in ("name", "romanized", "grounded_hex", "spinner_hex", "renamed_from") if c in pal]
-    # 1 · names that were shared: who gets which
-    for e in pal.attrs.get("renames", []):
+    swap_cols = [c for c in ("name", "romanized", "grounded_hex", "spinner_hex", "renamed_from", "orig_spinner_hex", "orig_romanized",
+                             "replaced") if c in pal]
+    import copy
+    pal.attrs["renames"] = copy.deepcopy(pal.attrs.get("renames", []))
+    for e in pal.attrs["renames"]:
         rows = lambda sdg: list(pal.index[(pal.language == e["language"]) & (pal.sdg == sdg)])
         a, b = (rows(e["sdg"]) or [None])[0], (rows(e["shared_with"]) or [None])[0]
         if a is None or b is None or not all(isinstance(pal.at[x, "grounded_hex"], str) for x in (a, b)):
             continue
-        now = de00(test(a), pal.at[a, "grounded_hex"]) + de00(test(b), pal.at[b, "grounded_hex"])
-        swapped = de00(test(a), pal.at[b, "grounded_hex"]) + de00(test(b), pal.at[a, "grounded_hex"])
-        if swapped < now - NOTICEABLE:
+        da, db = de00(test(a), pal.at[a, "grounded_hex"]), de00(test(b), pal.at[b, "grounded_hex"])
+        sa, sb = de00(test(a), pal.at[b, "grounded_hex"]), de00(test(b), pal.at[a, "grounded_hex"])
+        if sa + sb < da + db:
+            old_a, old_b = pal.at[a, "grounded_hex"], pal.at[b, "grounded_hex"]
+            old_name_a, old_name_b = pal.at[a, "name"], pal.at[b, "name"]
             for c in swap_cols:
                 pal.at[a, c], pal.at[b, c] = pal.at[b, c], pal.at[a, c]
             log.append(dict(language=e["language"], kind="swap", sdg=int(pal.at[a, "sdg"]), other=int(pal.at[b, "sdg"]),
-                            name=pal.at[a, "name"], other_name=pal.at[b, "name"], before=now / 2, after=swapped / 2))
-    # 2 · within each name, the tile closest to the test colour
-    for k in pal.index:
-        if pal.at[k, "language"] not in languages or not isinstance(pal.at[k, "grounded_hex"], str): continue
-        name, lang, cur = pal.at[k, "name"], pal.at[k, "language"], pal.at[k, "grounded_hex"]
-        focal = pal.at[k, "spinner_hex"] if isinstance(pal.at[k, "spinner_hex"], str) else cur
-        mapper = list(dict.fromkeys(safe(spinner.category_members, name, lang) or []))
-        best, best_d = cur, de00(test(k), cur)
-        for t in sorted(mapper, key=lambda t: de00(t, test(k))):
-            d = de00(t, test(k))
-            if d >= best_d - NOTICEABLE:
-                break                                       # sorted: nothing closer further down
-            if de00(t, focal) >= threshold:                 # outside the core: only if speakers still call it this
-                namer = safe(spinner.name, t, lang)
-                if not namer or not same_name(namer.get("name", ""), name):
-                    continue
-            best, best_d = t, d
-            break
-        if best != cur:
-            pal.at[k, "grounded_hex"] = best
-            if not isinstance(pal.at[k, "repaired_from"], str): pal.at[k, "repaired_from"] = cur
-            log.append(dict(language=lang, kind="tile", sdg=int(pal.at[k, "sdg"]), name=name, old=cur, new=best,
-                            before=de00(test(k), cur), after=best_d, tile=mapper.index(best) + 1, of=len(mapper)))
+                            name=pal.at[a, "name"], other_name=pal.at[b, "name"], old=old_a, other_old=old_b,
+                            d=(da, sa), other_d=(db, sb)))
+            e["sdg"], e["shared_with"] = e["shared_with"], e["sdg"]      # the synonym now belongs to the other test colour
+            if e.get("nearest_sdg") == e["sdg"]:                           # its nearest colour is now the other one
+                e["nearest_sdg"], e["nearest_name"] = e["shared_with"], pal.at[b if pal.at[a, "sdg"] == e["sdg"] else a, "name"]
+            e["matched"] = True
     pal.attrs["matches"] = log
     return pal
 
 def show_matches(pal, languages):
+    """Step 3 as a palette: one row per test colour, one column per language. Each cell: the name and its best example
+    after this step; where two test colours swapped names, the name it had before, and the ΔE₀₀ to the test colour."""
     log = pal.attrs.get("matches", [])
-    if not log:
-        show("<b>Every colour is already as close to its test colour as its name allows.</b>"); return
-    rows = []
+    tests = list(dict.fromkeys(_BY_SDG.sdg.astype(int))) if _BY_SDG is not None and len(_BY_SDG) else []
+    langs = [l for l in languages if (pal.language == l).any()]
+    if not tests or not langs:
+        show(small("This step needs the names from Part B.")); return
+    before = {}
     for e in log:
-        if e["kind"] == "swap":
-            what = (f"#{e['sdg']} and #{e['other']} swap names: #{e['sdg']} is now <i>{_h(e['name'])}</i>, "
-                    f"#{e['other']} <i>{_h(e['other_name'])}</i>")
-            rows.append([f"<b>{_h(e['language'])}</b>", what, "", pill(f"ΔE₀₀ = {e['before']:.1f} → {e['after']:.1f}", "good")
-                         + "<br>" + small("average distance from the test colours")])
-        else:
-            rows.append([f"<b>{_h(e['language'])}</b>",
-                         f"#{e['sdg']} · <i>{_h(e['name'])}</i>: tile {e['tile']} of {e['of']}, from best to worst example",
-                         framed(e["old"], "", 54, 34, 11) + " → " + framed(e["new"], "", 54, 34, 11),
-                         pill(f"ΔE₀₀ = {e['before']:.1f} → {e['after']:.1f}", "good") + "<br>" + small("from the test colour")])
-    show("<b>Optimised towards your test colours</b>")
-    table(["Language", "Change", "Before → after", "Distance"], rows, valign="top",
-          note="Each colour keeps its name, and moves to the example of that name closest to the test colour it stands for. "
-               "Names that two test colours shared go to whichever test colour they suit better.")
+        before[(e["language"], e["sdg"])] = (e["old"], e["other_name"], e["d"])
+        before[(e["language"], e["other"])] = (e["other_old"], e["name"], e["other_d"])
+    rows = []
+    for i in tests:
+        cells = []
+        for l in langs:
+            r = pal[(pal.language == l) & (pal.sdg == i)]
+            if r.empty or not isinstance(r.grounded_hex.iloc[0], str):
+                cells.append(small("—")); continue
+            r = r.iloc[0]
+            cell = framed(r.grounded_hex, r["name"], 118, 54, 13)
+            if (l, i) in before:
+                was, old_name, (d0, d1) = before[(l, i)]
+                cell += (f'<div style="margin-top:6px;display:flex;align-items:center;gap:6px">{small("was")}'
+                         f'{framed(was, "", 34, 22, 9)}{small(_h(old_name))}</div>'
+                         f'<div style="margin-top:4px">{pill(f"ΔE₀₀ = {d0:.1f} → {d1:.1f}", "good" if d1 <= d0 else "mid")}</div>')
+            else:
+                cell += f'<div style="margin-top:6px">{small("unchanged")}</div>'
+            cells.append(cell)
+        rows.append([framed(SDG.hex[i], f"#{i}", 84, 54, 13)] + cells)
+    n = len(log)
+    show("<b>Your palette, with each name matched to its closest test colour</b>")
+    table(["Your test colour"] + [_h(l) for l in langs], rows, valign="top",
+          note=(f"{n} pair{'s' if n != 1 else ''} of test colours swapped names, so that each name goes with the test colour it is "
+                "closer to (ΔE₀₀ to the test colour, before → after; together, the pair is closer). Every colour is still the best "
+                "example of its name.") if n else
+               "Every name already goes with the test colour it is closest to. Every colour is the best example of its name.")
+
+
+def show_step_palette(pal, before, languages, title, change_label, unchanged_label="unchanged", extra=None, note="", count=True):
+    """The same palette grid after every step of section 4, so the steps can be compared: one row per test colour, one
+    column per language. Each cell: the colour and name after this step; where it changed in this step, a small swatch of
+    what it was (and the old name), and what kind of change it was. `before` is the palette before this step, or "ai"
+    for the AI's own colours. `extra(language, test colour, row)` can add a line under a cell."""
+    tests = list(dict.fromkeys(_BY_SDG.sdg.astype(int))) if _BY_SDG is not None and len(_BY_SDG) else []
+    langs = [l for l in languages if (pal.language == l).any()]
+    if not tests or not langs:
+        show(small("This step needs the names from Part B.")); return
+    def row(p, l, i):
+        r = p[(p.language == l) & (p.sdg == i)] if "sdg" in p else p.iloc[0:0]
+        return r.iloc[0] if not r.empty else None
+    rows, changed = [], 0
+    for i in tests:
+        cells = []
+        for l in langs:
+            r = row(pal, l, i)
+            if r is None or not isinstance(r.grounded_hex, str):
+                cells.append(small("—")); continue
+            cell = framed(r.grounded_hex, r["name"], 118, 54, 13)
+            if isinstance(before, str) and before == "ai":
+                was_hex, was_name = r.get("ai_hex"), r["name"]
+            else:
+                b = row(before, l, i) if before is not None else None
+                was_hex, was_name = (b.grounded_hex, b["name"]) if b is not None else (None, None)
+            moved = isinstance(was_hex, str) and (was_hex.upper() != r.grounded_hex.upper() or not same_name(was_name, r["name"]))
+            if moved:
+                changed += 1
+                old = "" if same_name(was_name, r["name"]) else _h(was_name)
+                cell += (f'<div style="margin-top:6px;display:flex;align-items:center;gap:6px">{small("was")}'
+                         f'{framed(was_hex, "", 34, 22, 9)}{small(old)}</div>'
+                         f'<div style="margin-top:4px">{pill(change_label, "mid")}</div>')
+            elif unchanged_label:
+                cell += f'<div style="margin-top:6px">{small(unchanged_label)}</div>'
+            if extra is not None:
+                cell += extra(l, i, r)
+            cells.append(cell)
+        rows.append([framed(SDG.hex[i], f"#{i}", 84, 54, 13)] + cells)
+    show(f"<b>{_h(title)}</b>")
+    table(["Your test colour"] + [_h(l) for l in langs], rows, valign="top",
+          note=((f"{changed} colour{'s' if changed != 1 else ''} changed in this step. " if changed else "Nothing changed in this step. ")
+                if count else "") + note)
+
+def _details(summary, fn, *args, **kwargs):
+    """Run a function that shows its own output, folded under a 'Details' line."""
+    shown = []
+    global show
+    real = show
+    show = lambda h: shown.append(h)
+    try:
+        fn(*args, **kwargs)
+    finally:
+        show = real
+    if shown:
+        real(f'<details style="margin-top:10px"><summary style="cursor:pointer">{_h(summary)}</summary>{"".join(shown)}</details>')
+
+
+def show_ai_grid(pal, languages, threshold=DELTA_E_THRESHOLD):
+    """Section 3 in the same grid as section 4: one row per test colour, one column per language. Each cell: the AI's
+    colour for that name, large; under it, speakers' best example of the name, small, with the ΔE₀₀ between them; and
+    what speakers would call the AI's colour (the round trip)."""
+    pt = per_test_colour(pal)
+    tests = list(dict.fromkeys(_BY_SDG.sdg.astype(int))) if _BY_SDG is not None and len(_BY_SDG) else []
+    langs = [l for l in languages if (pt.language == l).any()]
+    if not tests or not langs or "sdg" not in pt:
+        show_comparison(pal, threshold); return
+    rows, far, other = [], 0, 0
+    for i in tests:
+        cells = []
+        for l in langs:
+            r = pt[(pt.language == l) & (pt.sdg == i)]
+            if r.empty or not isinstance(r.ai_hex.iloc[0], str):
+                cells.append(small("—")); continue
+            r = r.iloc[0]
+            cell = framed(r.ai_hex, r["name"], 118, 54, 13)
+            if isinstance(r.spinner_hex, str):
+                d = de00(r.ai_hex, r.spinner_hex)
+                far += d > threshold
+                cell += (f'<div style="margin-top:6px;display:flex;align-items:center;gap:6px">{small("speakers")}'
+                         f'{framed(r.spinner_hex, "", 34, 22, 9)}{pill(f"ΔE₀₀ = {d:.1f}", "bad" if d > threshold else "good")}</div>')
+            rt = r.get("rt_name")
+            if isinstance(rt, str):
+                agrees = same_name(rt, r["name"], r.get("romanized"))
+                other += not agrees
+                conf = r.get("rt_conf")
+                cell += (f'<div style="margin-top:4px">{small(("✓ " if agrees else "✗ ") + "speakers call it " + _h(rt) + (f" ({conf:.0%})" if isinstance(conf, float) and conf == conf else ""))}</div>')
+            cells.append(cell)
+        rows.append([framed(SDG.hex[i], f"#{i}", 84, 54, 13)] + cells)
+    show("<b>The AI's colours, with speakers' best examples underneath</b>")
+    table(["Your test colour"] + [_h(l) for l in langs], rows, valign="top",
+          note=f"Large: the AI's colour for each name. Small: speakers' best example of that name, from the Colour Spinner, and the "
+               f"ΔE₀₀ between the two (red: above {threshold:g}, a different colour). ✓/✗: whether speakers would call the AI's colour by "
+               f"the same name (the round trip). A name that two test colours share appears in both rows.")
+
+
+SDG_SHORT = {1: "No poverty", 2: "Zero hunger", 3: "Good health", 4: "Quality education", 5: "Gender equality",
+             6: "Clean water", 7: "Clean energy", 8: "Decent work", 9: "Industry", 10: "Reduced inequalities",
+             11: "Sustainable cities", 12: "Responsible consumption", 13: "Climate action", 14: "Life below water",
+             15: "Life on land", 16: "Peace and justice", 17: "Partnerships"}
+
+def _spread_labels(xy, gap=5.5, width=34, rounds=200):
+    """Label heights for points labelled to their right: labels that would overlap are pushed apart vertically."""
+    ys = [y for _, y in xy]
+    for _ in range(rounds):
+        moved = False
+        for a in range(len(xy)):
+            for b in range(a + 1, len(xy)):
+                if abs(xy[a][0] - xy[b][0]) < width and abs(ys[a] - ys[b]) < gap:
+                    push = (gap - abs(ys[a] - ys[b])) / 2 + 0.05
+                    up = 1 if (ys[a], a) > (ys[b], b) else -1
+                    ys[a] += up * push; ys[b] -= up * push; moved = True
+        if not moved: break
+    return ys
+
+def plot_sdg_plane(pal=None, language=None):
+    """The 17 SDG colours on the CIELAB a*–b* plane, seen from above, labelled with their goals. With a Part C palette
+    and a language: the other goals faded, and an arrow from each test colour's UN colour to its final colour."""
+    labs = {i: rgb_to_lab(h) for i, h in SDG.hex.items()}
+    final = {}
+    if pal is not None and language is not None and "sdg" in pal:
+        for _, r in pal[pal.language == language].iterrows():
+            if isinstance(r.get("grounded_hex"), str) and r.sdg == r.sdg:
+                final[int(r.sdg)] = (r.grounded_hex, r["name"])
+    fig, ax = plt.subplots(figsize=(9.6, 7.2))
+    _lab_axes(ax)
+    pts = {i: (float(l[1]), float(l[2])) for i, l in labs.items()}
+    label_y = dict(zip(pts, _spread_labels(list(pts.values()))))
+    for i, (a, b) in pts.items():
+        faded = bool(final) and i not in final
+        ax.scatter(a, b, s=90 if faded else 150, color=SDG.hex[i], edgecolor="white", linewidth=1.2,
+                   alpha=0.35 if faded else 1, zorder=3)
+        label = f"{i}" if i in final else f"{i} {SDG_SHORT[i]}"      # a test colour's name goes with its final colour
+        ax.text(a + 2.6, label_y[i] if i not in final else b, label, va="center", fontsize=9 if faded else 10,
+                color=MUTED if faded else INK, alpha=0.6 if faded else 1, zorder=4)
+    for i, (hx, name) in final.items():                 # where each test colour went
+        l = rgb_to_lab(hx); a1, b1 = float(l[1]), float(l[2])
+        a0, b0 = pts[i]
+        if abs(a1 - a0) + abs(b1 - b0) > 0.5:
+            ax.annotate("", xy=(a1, b1), xytext=(a0, b0), zorder=5,
+                        arrowprops=dict(arrowstyle="-|>", color=INK, lw=1.3, shrinkA=7, shrinkB=9))
+        ax.scatter(a1, b1, s=260, color=hx, edgecolor=INK, linewidth=1.6, zorder=6)
+        ax.text(a1 + 3.6, b1, f"#{i} {name}", ha="left", va="center", fontsize=10.5, fontweight="bold", color=INK, zorder=7,
+                bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="none", alpha=0.9))
+    allx = [a for a, _ in pts.values()] + [float(rgb_to_lab(h)[1]) for h, _ in final.values()]
+    ally = [b for _, b in pts.values()] + [float(rgb_to_lab(h)[2]) for h, _ in final.values()]
+    ax.set_xlim(min(allx) - 10, max(allx) + 38); ax.set_ylim(min(ally) - 12, max(ally) + 12)
+    ax.grid(color="#EFEFEC", lw=0.8); ax.set_axisbelow(True)
+    for sp in ("top", "right"): ax.spines[sp].set_visible(False)
+    if final:
+        _titles(ax, f"Where your test colours moved, in {language}",
+                "The UN's 17 SDG colours on the CIELAB a*–b* plane, seen from above (lightness not shown). Arrows: from each "
+                "test colour's UN colour (its number) to your final colour (its number and name). The other goals are faded.")
+    else:
+        _titles(ax, "The 17 SDG colours in colour space",
+                "The CIELAB a*–b* plane, seen from above (lightness not shown): reds and greens lie at opposite ends across, "
+                "yellows and blues up and down; the further from the centre, the more vivid the colour. Close colours are easier to confuse.")
+    fig.tight_layout(); plt.show()
