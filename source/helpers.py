@@ -837,18 +837,19 @@ def plot_pair_scorecard(card, confusable_below=SCORECARD_DE, name_line=1 - SCORE
     if ok.empty:
         show(small("The Spinner's name-similarity data couldn't be loaded for these names, so the scorecard can't be drawn.")); return
     biggest = max(float(ok.dE00.max()), confusable_below) + 1
-    top = confusable_below + (biggest - confusable_below) / 0.8                  # room above for the corner labels
+    top = confusable_below + (biggest - confusable_below) / 0.66                 # room above for the corner labels
     def fx(v): return 0.5 * v / name_line if v <= name_line else 0.5 + 0.5 * (v - name_line) / (1 - name_line)
     def fy(v): return 0.5 * v / confusable_below if v <= confusable_below else 0.5 + 0.5 * (v - confusable_below) / (top - confusable_below)
     fig, ax = plt.subplots(figsize=(7.6, 6.4))
-    zones = [((0, 0.5), "#F4F4F2", "Distinct to the eye, alike by name", "left", "top"),
-             ((0.5, 0.5), "#E2EEE7", "Distinct to the eye and by name", "right", "top"),
-             ((0, 0), "#F6E9E2", "Alike to the eye and by name", "left", "bottom"),
-             ((0.5, 0), "#F4F4F2", "Alike to the eye, distinct by name", "right", "bottom")]
+    zones = [((0, 0.5), "#F4F4F2", "Distinct to the eye,\nalike by name", "left", "top"),
+             ((0.5, 0.5), "#E2EEE7", "Distinct to the eye\nand by name", "right", "top"),
+             ((0, 0), "#F6E9E2", "Alike to the eye\nand by name", "left", "bottom"),
+             ((0.5, 0), "#F4F4F2", "Alike to the eye,\ndistinct by name", "right", "bottom")]
     for (x, y), col, label, ha, va in zones:
         ax.add_patch(mpl.patches.Rectangle((x, y), 0.5, 0.5, fc=col, ec="none", zorder=0))
         ax.text(x + (0.015 if ha == "left" else 0.485), y + (0.488 if va == "top" else 0.012), label,
-                ha=ha, va=va, fontsize=10.5, fontweight="bold", color=INK, zorder=1)
+                ha=ha, va=va, fontsize=10.5, fontweight="bold", color=INK, zorder=6,
+                bbox=dict(boxstyle="round,pad=0.25", fc=col, ec="none", alpha=0.88))
     ax.axvline(0.5, color="#9A9A95", ls=(0, (4, 3)), lw=1.2, zorder=1)
     ax.axhline(0.5, color="#9A9A95", ls=(0, (4, 3)), lw=1.2, zorder=1)
     # each pair: a disc split in two halves, one in each colour, labelled with both numbers
@@ -887,19 +888,23 @@ def plot_pair_scorecard(card, confusable_below=SCORECARD_DE, name_line=1 - SCORE
     ys = sorted(set(ticks) | {0, confusable_below / 2, confusable_below})
     ax.set_yticks([fy(t) for t in ys], [f"{t:g}" for t in ys])
     ax.set_xticks([fx(v) for v in (0, name_line / 2, name_line, (1 + name_line) / 2, 1)],
-                  ["0\nsame name", f"{name_line / 2:g}", f"{name_line:g}", f"{(1 + name_line) / 2:g}", "1\nunrelated"])
+                  ["0\nsame name", f"{name_line / 2:g}", f"{name_line:g}", f"{(1 + name_line) / 2:g}", "1\nunrelated names"])
+    # what the dashed lines mean, as a legend under the plot
+    from matplotlib.lines import Line2D
+    dash = dict(color="#9A9A95", ls=(0, (4, 3)), lw=1.2)
+    ax.legend([Line2D([0], [0], **dash), Line2D([0], [0], **dash)],
+              [f"ΔE₀₀ = {confusable_below:g}: told apart at a glance", f"{name_line:g}: names as different as typical synonyms"],
+              loc="upper center", bbox_to_anchor=(0.5, -0.17), ncol=2, frameon=False, fontsize=10, handlelength=2.6)
     ax.spines["left"].set_color(INK); ax.spines["bottom"].set_color(INK)
-    ax.set_xlabel("Name distinctiveness between the two names (1 − the Spinner's name similarity)")
-    ax.set_ylabel("ΔE₀₀ between the two colours")
     cond = card.attrs["condition"]
-    seen = ("with typical colour vision" if cond == "Typical" else
-            f"as seen at {cond.lower()}" if cond.startswith("Age") else f"as seen with {cond.lower()}")
+    seen = ("typical colour vision" if cond == "Typical" else cond.lower())
+    ax.set_xlabel(f"How different their names are in {card.attrs['language']} (from the Spinner's Thesaurus) →", fontsize=11)
+    ax.set_ylabel("How different the two colours look (ΔE₀₀) →", fontsize=11)
+    # what each dashed line means
     _titles(ax, "Colour identity scorecard",
-            f"Each disc is a pair of your test colours: its left half is one colour, its right half the other, with their numbers. "
-            f"Up: how different the two look (ΔE₀₀ between them, {seen.replace('with ', 'with ').replace('as seen ', '')}). "
-            f"Across: how differently their names are used in {card.attrs['language']} (0: the same name; 1: unrelated names). "
-            f"Dashed lines: ΔE₀₀ = {confusable_below:g} and name distinctiveness {name_line:g}; each axis is stretched so its line sits in the middle."
-            + (" Points that would overlap are moved sideways; their heights are exact." if nudged else ""))
+            f"Each disc is a pair of your test colours, its two halves the two colours, with their numbers; ΔE₀₀ with {seen}. "
+            "Each axis is stretched so that its dashed line sits in the middle."
+            + (" Discs that would overlap are moved sideways; their heights are exact." if nudged else ""))
     plt.tight_layout(); plt.show()
 
 def show_scorecard(card, top=40):
