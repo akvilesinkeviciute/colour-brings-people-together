@@ -4240,10 +4240,9 @@ ALL_LANGUAGES_7 = ["American English", "British English", "French", "Greek", "Ot
 
 def build_offline_cache(subset=DEFAULT_SUBSET, languages=ALL_LANGUAGES_7, path="spinner_offline.json"):
     """Ask the Colour Spinner, once, for everything the notebooks need with the default test colours, and save it:
-    the name of each test colour in every language; every name's best example; the Mapper tiles of the test colours'
-    names and of their Thesaurus synonyms, and what speakers call the tiles further than ΔE₀₀ 5 from the best
-    example; and the simulations of the 17 SDG colours, every best example and those tiles. Saves as it goes,
-    so it can be rerun if interrupted. Takes a while: about 20–40 minutes, depending on the Spinner."""
+    every language's names and each name's best example; the name of each test colour in every language; and the
+    simulations of the 17 SDG colours and of every best example, for the three colour vision deficiencies and three ages.
+    Saves as it goes, so it can be rerun if interrupted. Takes about 10–20 minutes, depending on the Spinner."""
     import time
     sp = ApiSpinner()
     out = {"made": time.strftime("%Y-%m-%d %H:%M"), "subset": list(subset), "pages": [], "best": [], "members": [],
@@ -4253,51 +4252,31 @@ def build_offline_cache(subset=DEFAULT_SUBSET, languages=ALL_LANGUAGES_7, path="
         out["members"] = [[k[1], k[2], v] for k, v in sp._pages.items() if k[0] == "members"]
         out["best"] = [[k[0], k[1], v] for k, v in sp._best.items()]
         out["lang_ids"], out["lang_names"] = sp._lang_ids, sp._lang_names
-        out["sims"] = [[k[0], k[1], v] for k, v in _SIM["cache"].items() if k not in _SIM["local"]]
+        out["sims"] = [[k[0], k[1], v] for k, v in _SIM["cache"].items()]
         json.dump(out, open(path, "w", encoding="utf-8"), ensure_ascii=False)
     step = lambda t: print(f"{time.strftime('%H:%M:%S')}  {t}", flush=True)
-    # 1 · every language's names, and each name's best example
+    # 1 · every language's names, and each name's best example (also for the AI's names and the synonyms)
     for lang in languages:
         names = sp._language_ids(lang)
-        step(f"{lang}: {len(names)} names")
         for key in names:
-            shown = sp._lang_names.get(lang, {}).get(key, key)
-            try_call(sp.best_example, shown, lang)
+            try_call(sp.best_example, sp._lang_names.get(lang, {}).get(key, key), lang)
+        step(f"{lang}: {len(names)} names and their best examples")
         save()
-    # 2 · the test colours' names in every language, and their Mapper tiles (and those of their synonyms)
-    data = _similarity_data()
+    # 2 · what speakers call each test colour, in every language
     for i in subset:
         for lang in languages:
             res = try_call(sp.lookup, SDG.hex[i], lang)
-            if not res: step(f"  SDG {i} in {lang}: no answer"); continue
-            names = [res["name"]]
-            m = data.get(_sim_key(lang))
-            if m:                                    # its synonyms too, for the renaming step
-                row = next((m["index"][norm(c)] for c in (res["name"], res.get("romanized")) if isinstance(c, str) and norm(c) in m["index"]), None)
-                if row is not None:
-                    order = sorted(((v, c) for c, v in enumerate(m["similarity"][row]) if c != row), reverse=True)[:SYNONYMS_TO_TRY]
-                    names += [n for n in (_spinner_name(sp, lang, m["names"][c]) for _, c in order) if n]
-            for n in names:
-                tiles = try_call(sp.category_members, n, lang) or []
-                best = try_call(sp.best_example, n, lang)
-                for t in tiles:                       # what speakers call the tiles outside the core
-                    if best and de00(t, best) >= DELTA_E_THRESHOLD:
-                        try_call(sp.name, t, lang)
-            step(f"  SDG {i} in {lang}: {res['name']} and {len(names) - 1} synonyms")
+            step(f"  SDG {i} in {lang}: " + (res["name"] if isinstance(res, dict) else "no answer"))
         save()
-    # 3 · the simulations
-    hexes = list(SDG.hex) + list(dict.fromkeys(v for v in sp._best.values() if isinstance(v, str)))
-    hexes += [t for k, v in sp._pages.items() if k[0] == "members" for t in v]
-    hexes = list(dict.fromkeys(h.upper() for h in hexes))
-    step(f"simulating {len(hexes)} colours under 6 conditions")
-    for k in range(0, len(hexes), 60):
-        prefetch_simulations(hexes[k:k + 60]); save()
-        step(f"  {min(k + 60, len(hexes))} of {len(hexes)}")
+    # 3 · the simulations: the 17 SDG colours and every best example
+    hexes = list(dict.fromkeys(h.upper() for h in list(SDG.hex) + [v for v in sp._best.values() if isinstance(v, str)]))
+    step(f"simulating {len(hexes)} colours for 6 kinds of vision")
+    for k in range(0, len(hexes), 40):
+        prefetch_simulations(hexes[k:k + 40]); save()
+        step(f"  {min(k + 40, len(hexes))} of {len(hexes)}")
     save()
-    step(f"done: {path}, {len(out['pages'])} lookups, {len(out['best'])} best examples, {len(out['members'])} Mapper lists, "
-         f"{len(out['sims'])} simulations")
+    step(f"done: {path} · {len(out['pages'])} names of test colours, {len(out['best'])} best examples, {len(out['sims'])} simulations")
     return path
-
 
 def show_nearest_sdg(pal, languages, threshold=DELTA_E_THRESHOLD):
     """Step 4: the same palette grid, with each final colour matched to its nearest of the UN's 17 SDG colours (ΔE₀₀,
@@ -4813,5 +4792,5 @@ def show_final_palette(pal, language, vision="Typical"):
              f"<div>{tiles}</div>")
     plot_sdg_plane(pal, language, vision, only_tests=True)
 
-TOOLKIT_VERSION = "2026-10-31 22:17"
+TOOLKIT_VERSION = "2026-10-31 22:50"
 print(f"Toolkit ready ✓  version {TOOLKIT_VERSION}  " + ("(running in Colab)" if IN_COLAB else "(running locally)"))
